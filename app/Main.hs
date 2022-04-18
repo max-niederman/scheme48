@@ -17,7 +17,19 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
-  deriving (Show)
+
+unpackNumber :: LispVal -> Maybe Integer
+unpackNumber (Number n) = Just n
+unpackNumber _ = Nothing
+
+instance Show LispVal where
+  show (Atom name) = name
+  show (List contents) = "(" ++ (unwords $ map show contents) ++ ")"
+  show (DottedList proper tail) = "(" ++ (unwords $ map show proper) ++ " . " ++ show tail ++ ")"
+  show (Number n) = show n
+  show (String s) = "\"" ++ s ++ "\""
+  show (Bool True) = "#t"
+  show (Bool False) = "#f"
 
 parseExpr :: Parser LispVal
 parseExpr = choice [parseQuoted, parseList, parseString, parseNumber, parseAtom]
@@ -80,12 +92,22 @@ parseString = do
         't' -> '\t'
         _ -> code
 
-readExpr :: String -> String
+builtinFunctions :: [(String, [LispVal] -> LispVal)]
+builtinFunctions = [("+",  (numericBinaryOp +))]
+  where
+    numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
+    numericBinaryOp op params = (Number . foldl1 op) <$> mapM unpackNumber params
+
+eval :: LispVal -> LispVal
+eval (List [Atom "quote", val]) = val
+eval val@(String _) = val
+eval val@(Number _) = val
+eval val@(Bool _) = val
+
+readExpr :: String -> LispVal
 readExpr input = case parse parseExpr "lisp" input of
-  Left err -> "Error:\n" ++ show err
-  Right val -> "Parsed:\n" ++ show val
+  Left err -> String $ "Error:\n" ++ show err
+  Right val -> val
 
 main :: IO ()
-main = do
-  (expr : _) <- getArgs
-  putStrLn (readExpr expr)
+main = head <$> getArgs >>= print . eval . readExpr

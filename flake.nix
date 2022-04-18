@@ -36,6 +36,8 @@
           defaultPackage = packages.vanessa;
 
           devShell = project (with haskellPackages; [
+            haskell-language-server
+
             # cabal
             cabal-fmt
             cabal-install
