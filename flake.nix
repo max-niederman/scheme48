@@ -41,6 +41,8 @@
             # cabal
             cabal-fmt
             cabal-install
+
+            stylish-haskell
           ]);
         }
       );

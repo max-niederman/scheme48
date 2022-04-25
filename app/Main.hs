@@ -1,8 +1,10 @@
 module Main where
 
-import Numeric (readHex, readOct)
-import System.Environment (getArgs)
-import Text.ParserCombinators.Parsec
+import           Data.Maybe
+import           Control.Monad
+import           Numeric                       (readHex, readOct)
+import           System.Environment            (getArgs)
+import           Text.ParserCombinators.Parsec
 
 whitespace :: Parser ()
 whitespace = skipMany1 space
@@ -17,10 +19,11 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
+  deriving (Eq)
 
 unpackNumber :: LispVal -> Maybe Integer
 unpackNumber (Number n) = Just n
-unpackNumber _ = Nothing
+unpackNumber _          = Nothing
 
 instance Show LispVal where
   show (Atom name) = name
@@ -42,7 +45,7 @@ parseAtom = do
   return $ case atom of
     "#t" -> Bool True
     "#f" -> Bool False
-    _ -> Atom atom
+    _    -> Atom atom
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
@@ -90,24 +93,43 @@ parseString = do
         'n' -> '\n'
         'r' -> '\r'
         't' -> '\t'
-        _ -> code
+        _   -> code
 
 builtinFunctions :: [(String, [LispVal] -> LispVal)]
-builtinFunctions = [("+",  (numericBinaryOp +))]
+builtinFunctions = [
+    ("+",  (numericVariadicOp (+) 0)),
+    ("-",  (numericVariadicOp (-) 0)),
+    ("*",  (numericVariadicOp (*) 1)),
+    ("/",  (numericVariadicOp div 1)),
+    ("modulo",  (numericBinaryOp mod)),
+    ("quotient",  (numericBinaryOp quot)),
+    ("remainder",  (numericBinaryOp rem))
+  ]
   where
+    -- TODO: improve error handling
+
     numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
-    numericBinaryOp op params = (Number . foldl1 op) <$> mapM unpackNumber params
+    numericBinaryOp op [Number a, Number b] = Number $ op a b
+    numericBinaryOp op _ = Number 0
+
+    numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> LispVal
+    numericVariadicOp op identity params = Number $ foldM (fmap op . unpackNumber) (Number identity) params
 
 eval :: LispVal -> LispVal
 eval (List [Atom "quote", val]) = val
-eval val@(String _) = val
-eval val@(Number _) = val
-eval val@(Bool _) = val
+eval val@(String _)             = val
+eval val@(Number _)             = val
+eval val@(Bool _)               = val
+eval (List (Atom func : args))  = apply func $ map eval args
+
+-- TODO: improve error handling
+apply :: String -> [LispVal] -> LispVal
+apply func args = maybe (Atom "error") ($ args) $ lookup func builtinFunctions
 
 readExpr :: String -> LispVal
 readExpr input = case parse parseExpr "lisp" input of
-  Left err -> String $ "Error:\n" ++ show err
+  Left err  -> String $ "Error:\n" ++ show err
   Right val -> val
 
 main :: IO ()
-main = head <$> getArgs >>= print . eval . readExpr
+main = head <$> getArgs >>= readFile >>= print . eval . readExpr
