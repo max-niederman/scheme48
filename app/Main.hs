@@ -1,5 +1,6 @@
 module Main where
 
+import           Data.Bifunctor
 import           Control.Monad
 import           Data.Maybe
 import           Numeric                       (readHex, readOct)
@@ -26,9 +27,9 @@ isSymbol (Symbol _) = True
 isSymbol _          = False
 
 isPair :: LispVal -> Bool
-isPair (List _)       = True
+isPair (List _)         = True
 isPair (DottedList _ _) = True
-isPair _              = False
+isPair _                = False
 
 isNumber :: LispVal -> Bool
 isNumber (Number _) = True
@@ -54,6 +55,23 @@ instance Show LispVal where
   show (String s) = "\"" ++ s ++ "\""
   show (Bool True) = "#t"
   show (Bool False) = "#f"
+
+data LispError
+  = ParseError String
+  | NumArgs String [LispVal]
+  | TypeMismatch String LispVal
+  | UnboundVar String String
+
+type Fallible = Either LispError
+
+instance Show LispError where
+  show (ParseError message) = "Parse error: " ++ message
+  show (NumArgs expected arguments) =
+    "Expected " ++ show expected ++ " arguments, but got " ++ show (length arguments)
+  show (TypeMismatch expected actual) =
+    "Expected " ++ expected ++ ", but got " ++ show actual
+  show (UnboundVar varname) =
+    "Variable '" ++ varname ++ "' is unbound"
 
 parseExpr :: Parser LispVal
 parseExpr = choice [parseQuoted, parseList, parseString, parseNumber, parseSymbol]
@@ -116,7 +134,7 @@ parseString = do
         't' -> '\t'
         _   -> code
 
-builtinFunctions :: [(String, [LispVal] -> LispVal)]
+builtinFunctions :: [(String, [LispVal] -> Fallible LispVal)]
 builtinFunctions = [
     ("symbol?", allBoolean isSymbol),
     ("pair?", allBoolean isPair),
@@ -137,35 +155,33 @@ builtinFunctions = [
   where
     -- TODO: improve error handling
 
-    equalityOp :: (LispVal -> LispVal -> Bool) -> [LispVal] -> LispVal 
-    equalityOp f [] = Bool True
-    equalityOp f (x:xs) = Bool $ all (f x) xs
+    equalityOp :: (LispVal -> LispVal -> Bool) -> [LispVal] -> Fallible LispVal
+    equalityOp f []     = return . Bool True
+    equalityOp f (x:xs) = return . Bool $ all (f x) xs
 
-    allBoolean :: (LispVal -> Bool) -> [LispVal] -> LispVal
-    allBoolean f args = Bool $ all f args
+    allBoolean :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
+    allBoolean f args = return . Bool $ all f args
 
-    numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
-    numericBinaryOp op [Number a, Number b] = Number $ op a b
-    numericBinaryOp op _                    = Number 0
+    numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> Fallible LispVal
+    numericBinaryOp op [Number a, Number b] = return . Number $ op a b
+    numericBinaryOp op _                    = Left $ NumArgs 2 []
 
-    numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> LispVal
-    numericVariadicOp op identity params = Number $ foldl op identity $ map (fromMaybe 0 . unpackNumber) params
+    numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> Fallible LispVal
+    numericVariadicOp op identity params = return . Number $ foldl op identity $ map (fromMaybe 0 . unpackNumber) params
 
-eval :: LispVal -> LispVal
-eval (List [Symbol "quote", val]) = val
-eval val@(String _)             = val
-eval val@(Number _)             = val
-eval val@(Bool _)               = val
+eval :: LispVal -> Fallible LispVal
+eval (List [Symbol "quote", val]) = return val
+eval val@(String _)               = return val
+eval val@(Number _)               = return val
+eval val@(Bool _)                 = return val
 eval (List (Symbol func : args))  = apply func $ map eval args
 
 -- TODO: improve error handling
-apply :: String -> [LispVal] -> LispVal
-apply func args = maybe (Symbol "error") ($ args) $ lookup func builtinFunctions
+apply :: String -> [LispVal] -> Fallible LispVal
+apply func args = lookup func builtinFunctions args
 
-readExpr :: String -> LispVal
-readExpr input = case parse parseExpr "lisp" input of
-  Left err  -> String $ "Error:\n" ++ show err
-  Right val -> val
+readExpr :: String -> Fallible LispVal
+readExpr input = bimap (ParseError . show) id $ parse parseExpr "lisp" input 
 
 main :: IO ()
 main = head <$> getArgs >>= readFile >>= print . eval . readExpr
