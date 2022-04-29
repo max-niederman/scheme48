@@ -1,7 +1,7 @@
 module Main where
 
-import           Data.Bifunctor
 import           Control.Monad
+import           Data.Bifunctor
 import           Data.Maybe
 import           Numeric                       (readHex, readOct)
 import           System.Environment            (getArgs)
@@ -49,8 +49,8 @@ unpackNumber _          = Nothing
 
 instance Show LispVal where
   show (Symbol name) = name
-  show (List contents) = "(" ++ (unwords $ map show contents) ++ ")"
-  show (DottedList proper tail) = "(" ++ (unwords $ map show proper) ++ " . " ++ show tail ++ ")"
+  show (List contents) = "(" ++ unwords (map show contents) ++ ")"
+  show (DottedList proper tail) = "(" ++ unwords (map show proper) ++ " . " ++ show tail ++ ")"
   show (Number n) = show n
   show (String s) = "\"" ++ s ++ "\""
   show (Bool True) = "#t"
@@ -58,9 +58,9 @@ instance Show LispVal where
 
 data LispError
   = ParseError String
-  | NumArgs String [LispVal]
+  | NumArgs Integer [LispVal]
   | TypeMismatch String LispVal
-  | UnboundVar String String
+  | UnboundVar String
 
 type Fallible = Either LispError
 
@@ -70,8 +70,8 @@ instance Show LispError where
     "Expected " ++ show expected ++ " arguments, but got " ++ show (length arguments)
   show (TypeMismatch expected actual) =
     "Expected " ++ expected ++ ", but got " ++ show actual
-  show (UnboundVar varname) =
-    "Variable '" ++ varname ++ "' is unbound"
+  show (UnboundVar name) =
+    "Variable '" ++ name ++ "' is unbound"
 
 parseExpr :: Parser LispVal
 parseExpr = choice [parseQuoted, parseList, parseString, parseNumber, parseSymbol]
@@ -156,7 +156,7 @@ builtinFunctions = [
     -- TODO: improve error handling
 
     equalityOp :: (LispVal -> LispVal -> Bool) -> [LispVal] -> Fallible LispVal
-    equalityOp f []     = return . Bool True
+    equalityOp f []     = return $ Bool True
     equalityOp f (x:xs) = return . Bool $ all (f x) xs
 
     allBoolean :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
@@ -164,24 +164,31 @@ builtinFunctions = [
 
     numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> Fallible LispVal
     numericBinaryOp op [Number a, Number b] = return . Number $ op a b
-    numericBinaryOp op _                    = Left $ NumArgs 2 []
+    numericBinaryOp op args                 = Left $ NumArgs 2 args
 
     numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> Fallible LispVal
     numericVariadicOp op identity params = return . Number $ foldl op identity $ map (fromMaybe 0 . unpackNumber) params
 
 eval :: LispVal -> Fallible LispVal
 eval (List [Symbol "quote", val]) = return val
-eval val@(String _)               = return val
+eval val@(Symbol _)               = return val
 eval val@(Number _)               = return val
+eval val@(String _)               = return val
 eval val@(Bool _)                 = return val
-eval (List (Symbol func : args))  = apply func $ map eval args
+eval (List (Symbol func : args))  = mapM eval args >>= apply func
 
 -- TODO: improve error handling
 apply :: String -> [LispVal] -> Fallible LispVal
-apply func args = lookup func builtinFunctions args
+apply name args = case lookup name builtinFunctions of
+  Just f  -> f args
+  Nothing -> Left $ UnboundVar name
 
 readExpr :: String -> Fallible LispVal
-readExpr input = bimap (ParseError . show) id $ parse parseExpr "lisp" input 
+readExpr input = first (ParseError . show) $ parse parseExpr "lisp" input
 
 main :: IO ()
-main = head <$> getArgs >>= readFile >>= print . eval . readExpr
+main = getArgs >>= sourceFromArgs >>= either (putStrLn . ("Error:\n" ++) . show) print . (eval <=< readExpr)
+  where
+    sourceFromArgs :: [String] -> IO String
+    sourceFromArgs []    = readFile "/dev/stdin"
+    sourceFromArgs (x:_) = readFile x

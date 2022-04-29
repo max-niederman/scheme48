@@ -1,6 +1,9 @@
 # environment
 .direnv
 
+# editor
+.vscode/
+
 # nix
 result
 result-*
