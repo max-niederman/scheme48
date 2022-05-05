@@ -49,7 +49,7 @@ unpackNumber val        = Left $ TypeMismatch "number" val
 
 unpackBool :: LispVal -> Fallible Bool
 unpackBool (Bool b) = return b
-unpackBool val        = Left $ TypeMismatch "boolean" val
+unpackBool val      = Left $ TypeMismatch "boolean" val
 
 instance Show LispVal where
   show (Symbol name) = name
@@ -148,10 +148,10 @@ builtinFunctions = [
 
     ("eqv?", equalityOp (==)),
 
-    ("+",  variadicOp unpackNumber Number (+) 0),
-    ("-",  variadicOp unpackNumber Number (-) 0),
-    ("*",  variadicOp unpackNumber Number (*) 1),
-    ("/",  variadicOp unpackNumber Number div 1),
+    ("+",  variadicFoldingOp unpackNumber Number (+) 0),
+    ("-",  variadicFoldingOp unpackNumber Number (-) 0),
+    ("*",  variadicFoldingOp unpackNumber Number (*) 1),
+    ("/",  variadicFoldingOp unpackNumber Number div 1),
     ("modulo",  binaryOp unpackNumber Number mod),
     ("quotient",  binaryOp unpackNumber Number quot),
     ("remainder",  binaryOp unpackNumber Number rem),
@@ -163,8 +163,8 @@ builtinFunctions = [
     (">=",  binaryOp unpackNumber Bool (>=)),
     ("<=",  binaryOp unpackNumber Bool (<=)),
 
-    ("&&",  variadicOp unpackBool Bool (&&) True),
-    ("||",  variadicOp unpackBool Bool (||) False)
+    ("&&",  variadicFoldingOp unpackBool Bool (&&) True),
+    ("||",  variadicFoldingOp unpackBool Bool (||) False)
   ]
 
   where
@@ -184,15 +184,24 @@ builtinFunctions = [
       return . cons $ f a' b'
     binaryOp _ _ _ args = Left $ NumArgs 2 args
 
-    variadicOp :: (LispVal -> Fallible a) -> (a -> LispVal) -> (a -> a -> a) -> a -> [LispVal] -> Fallible LispVal
-    variadicOp ext cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . ext) params
+    variadicFoldingOp :: (LispVal -> Fallible a) -> (a -> LispVal) -> (a -> a -> a) -> a -> [LispVal] -> Fallible LispVal
+    variadicFoldingOp ext cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . ext) params
 
 eval :: LispVal -> Fallible LispVal
 eval (List [Symbol "quote", val]) = return val
+
 eval val@(Symbol _)               = return val
 eval val@(Number _)               = return val
 eval val@(String _)               = return val
 eval val@(Bool _)                 = return val
+
+eval (List [Symbol "if", pred, conseq, alt]) = do
+  pred' <- eval pred
+  case pred' of
+    Bool True  -> eval conseq
+    Bool False -> eval alt
+    otherwise  -> Left $ TypeMismatch "boolean" pred'
+
 eval (List (Symbol func : args))  = mapM eval args >>= apply func
 
 -- TODO: improve error handling
