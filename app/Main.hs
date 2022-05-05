@@ -3,6 +3,7 @@ module Main where
 import           Control.Monad
 import qualified Data.Bifunctor                as Bifunctor
 import           Data.Either                   (fromRight)
+import           Data.Maybe                    (listToMaybe)
 import           Numeric                       (readHex, readOct)
 import           System.Environment            (getArgs)
 import           Text.ParserCombinators.Parsec
@@ -15,8 +16,7 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 data LispVal
   = Symbol String
-  | List [LispVal]
-  | DottedList [LispVal] LispVal
+  | Pair [LispVal]
   | Number Integer
   | String String
   | Bool Bool
@@ -27,9 +27,8 @@ isSymbol (Symbol _) = True
 isSymbol _          = False
 
 isPair :: LispVal -> Bool
-isPair (List _)         = True
-isPair (DottedList _ _) = True
-isPair _                = False
+isPair (Pair _) = True
+isPair _        = False
 
 isNumber :: LispVal -> Bool
 isNumber (Number _) = True
@@ -43,6 +42,14 @@ isBoolean :: LispVal -> Bool
 isBoolean (Bool _) = True
 isBoolean _        = False
 
+unpackPair :: LispVal -> Fallible [LispVal]
+unpackPair (Pair n) = return n
+unpackPair val      = Left $ TypeMismatch "pair" val
+
+unpackPairToCons :: LispVal -> Fallible (LispVal, LispVal)
+unpackPairToCons (Pair (car:cdr)) = return (car, Pair cdr)
+unpackPairToCons val              = Left $ TypeMismatch "pair" val
+
 unpackNumber :: LispVal -> Fallible Integer
 unpackNumber (Number n) = return n
 unpackNumber val        = Left $ TypeMismatch "number" val
@@ -52,13 +59,12 @@ unpackBool (Bool b) = return b
 unpackBool val      = Left $ TypeMismatch "boolean" val
 
 instance Show LispVal where
-  show (Symbol name) = name
-  show (List contents) = "(" ++ unwords (map show contents) ++ ")"
-  show (DottedList proper tail) = "(" ++ unwords (map show proper) ++ " . " ++ show tail ++ ")"
-  show (Number n) = show n
-  show (String s) = "\"" ++ s ++ "\""
-  show (Bool True) = "#t"
-  show (Bool False) = "#f"
+  show (Symbol name)   = name
+  show (Pair contents) = "(" ++ unwords (map show contents) ++ ")"
+  show (Number n)      = show n
+  show (String s)      = "\"" ++ s ++ "\""
+  show (Bool True)     = "#t"
+  show (Bool False)    = "#f"
 
 data LispError
   = ParseError String
@@ -78,7 +84,7 @@ instance Show LispError where
     "Variable '" ++ name ++ "' is unbound"
 
 parseExpr :: Parser LispVal
-parseExpr = choice [parseQuoted, parseList, parseString, parseNumber, parseSymbol]
+parseExpr = choice [parseQuoted, parsePair, parseString, parseNumber, parseSymbol]
 
 parseSymbol :: Parser LispVal
 parseSymbol = do
@@ -94,15 +100,14 @@ parseQuoted :: Parser LispVal
 parseQuoted = do
   char '\''
   expr <- parseExpr
-  return $ List [Symbol "quote", expr]
+  return $ Pair [Symbol "quote", expr]
 
-parseList :: Parser LispVal
-parseList = do
+parsePair :: Parser LispVal
+parsePair = do
   char '('
-  proper <- sepEndBy parseExpr whitespace
-  list <- DottedList proper <$> (char '.' >> spaces >> parseExpr) <|> return (List proper)
+  elements <- sepEndBy parseExpr whitespace
   char ')'
-  return list
+  return $ Pair elements
 
 --   TODO: implement the rest of the R5RS number spec i.e. floating points, binary notation, complex numbers
 parseNumber :: Parser LispVal
@@ -148,6 +153,14 @@ builtinFunctions = [
 
     ("eqv?", equalityOp (==)),
 
+    ("car", unaryOp unpackPairToCons id fst),
+    ("cdr", unaryOp unpackPairToCons id snd),
+    ("cons", consOp),
+
+    ("not",  unaryOp unpackBool Bool not),
+    ("&&",  variadicFoldingOp unpackBool Bool (&&) True),
+    ("||",  variadicFoldingOp unpackBool Bool (||) False),
+
     ("+",  variadicFoldingOp unpackNumber Number (+) 0),
     ("-",  variadicFoldingOp unpackNumber Number (-) 0),
     ("*",  variadicFoldingOp unpackNumber Number (*) 1),
@@ -161,10 +174,7 @@ builtinFunctions = [
     (">",  binaryOp unpackNumber Bool (>)),
     ("/=",  binaryOp unpackNumber Bool (/=)),
     (">=",  binaryOp unpackNumber Bool (>=)),
-    ("<=",  binaryOp unpackNumber Bool (<=)),
-
-    ("&&",  variadicFoldingOp unpackBool Bool (&&) True),
-    ("||",  variadicFoldingOp unpackBool Bool (||) False)
+    ("<=",  binaryOp unpackNumber Bool (<=))
   ]
 
   where
@@ -177,32 +187,41 @@ builtinFunctions = [
     typeCheck :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
     typeCheck f args = return . Bool $ all f args
 
+    unaryOp :: (LispVal -> Fallible a) -> (r -> LispVal) -> (a -> r) -> [LispVal] -> Fallible LispVal
+    unaryOp unpack con f [a] = con . f <$> unpack a
+    unaryOp _ _ _ args       = Left $ NumArgs 1 args
+
     binaryOp :: (LispVal -> Fallible a) -> (r -> LispVal) -> (a -> a -> r) -> [LispVal] -> Fallible LispVal
-    binaryOp ext cons f [a, b] = do
-      a' <- ext a
-      b' <- ext b
-      return . cons $ f a' b'
+    binaryOp unpack con f [a, b] = do
+      a' <- unpack a
+      b' <- unpack b
+      return . con $ f a' b'
     binaryOp _ _ _ args = Left $ NumArgs 2 args
 
     variadicFoldingOp :: (LispVal -> Fallible a) -> (a -> LispVal) -> (a -> a -> a) -> a -> [LispVal] -> Fallible LispVal
-    variadicFoldingOp ext cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . ext) params
+    variadicFoldingOp unpack cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . unpack) params
+
+    -- we can't use `binaryOp` for this because the unpacking is different for `car` and `cdr`
+    consOp :: [LispVal] -> Fallible LispVal
+    consOp [car, Pair cdr] = return $ Pair (car : cdr)
+    consOp [_, cdr]        = Left $ TypeMismatch "pair" cdr
+    consOp args            = Left $ NumArgs 2 args
 
 eval :: LispVal -> Fallible LispVal
-eval (List [Symbol "quote", val]) = return val
-
-eval val@(Symbol _)               = return val
-eval val@(Number _)               = return val
-eval val@(String _)               = return val
-eval val@(Bool _)                 = return val
-
-eval (List [Symbol "if", pred, conseq, alt]) = do
+eval (Pair [Symbol "quote", val]) = return val
+eval (Pair [Symbol "if", pred, conseq, alt]) = do
   pred' <- eval pred
   case pred' of
     Bool True  -> eval conseq
     Bool False -> eval alt
-    otherwise  -> Left $ TypeMismatch "boolean" pred'
+    _          -> Left $ TypeMismatch "boolean" pred'
+eval (Pair (Symbol func : args))  = mapM eval args >>= apply func
 
-eval (List (Symbol func : args))  = mapM eval args >>= apply func
+eval val@(Symbol _)               = return val
+eval val@(Pair _)                = return val
+eval val@(Number _)               = return val
+eval val@(String _)               = return val
+eval val@(Bool _)                 = return val
 
 -- TODO: improve error handling
 apply :: String -> [LispVal] -> Fallible LispVal
