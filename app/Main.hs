@@ -1,8 +1,8 @@
 module Main where
 
 import           Control.Monad
-import           Data.Bifunctor
-import           Data.Maybe
+import qualified Data.Bifunctor                as Bifunctor
+import           Data.Either                   (fromRight)
 import           Numeric                       (readHex, readOct)
 import           System.Environment            (getArgs)
 import           Text.ParserCombinators.Parsec
@@ -43,9 +43,13 @@ isBoolean :: LispVal -> Bool
 isBoolean (Bool _) = True
 isBoolean _        = False
 
-unpackNumber :: LispVal -> Maybe Integer
-unpackNumber (Number n) = Just n
-unpackNumber _          = Nothing
+unpackNumber :: LispVal -> Fallible Integer
+unpackNumber (Number n) = return n
+unpackNumber val        = Left $ TypeMismatch "number" val
+
+unpackBool :: LispVal -> Fallible Bool
+unpackBool (Bool b) = return b
+unpackBool val        = Left $ TypeMismatch "boolean" val
 
 instance Show LispVal where
   show (Symbol name) = name
@@ -136,28 +140,31 @@ parseString = do
 
 builtinFunctions :: [(String, [LispVal] -> Fallible LispVal)]
 builtinFunctions = [
-    ("symbol?", allBoolean isSymbol),
-    ("pair?", allBoolean isPair),
-    ("number?", allBoolean isNumber),
-    ("string?", allBoolean isString),
-    ("boolean?", allBoolean isBoolean),
+    ("symbol?", typeCheck isSymbol),
+    ("pair?", typeCheck isPair),
+    ("number?", typeCheck isNumber),
+    ("string?", typeCheck isString),
+    ("boolean?", typeCheck isBoolean),
 
     ("eqv?", equalityOp (==)),
 
-    ("+",  numericVariadicOp (+) 0),
-    ("-",  numericVariadicOp (-) 0),
-    ("*",  numericVariadicOp (*) 1),
-    ("/",  numericVariadicOp div 1),
-    ("modulo",  numericBinaryOp Number mod),
-    ("quotient",  numericBinaryOp Number quot),
-    ("remainder",  numericBinaryOp Number rem),
+    ("+",  variadicOp unpackNumber Number (+) 0),
+    ("-",  variadicOp unpackNumber Number (-) 0),
+    ("*",  variadicOp unpackNumber Number (*) 1),
+    ("/",  variadicOp unpackNumber Number div 1),
+    ("modulo",  binaryOp unpackNumber Number mod),
+    ("quotient",  binaryOp unpackNumber Number quot),
+    ("remainder",  binaryOp unpackNumber Number rem),
 
-    ("=",  numericBinaryOp Bool (==)),
-    ("<",  numericBinaryOp Bool (<)),
-    (">",  numericBinaryOp Bool (>)),
-    ("/=",  numericBinaryOp Bool (/=)),
-    (">=",  numericBinaryOp Bool (>=)),
-    ("<=",  numericBinaryOp Bool (<=))
+    ("=",  binaryOp unpackNumber Bool (==)),
+    ("<",  binaryOp unpackNumber Bool (<)),
+    (">",  binaryOp unpackNumber Bool (>)),
+    ("/=",  binaryOp unpackNumber Bool (/=)),
+    (">=",  binaryOp unpackNumber Bool (>=)),
+    ("<=",  binaryOp unpackNumber Bool (<=)),
+
+    ("&&",  variadicOp unpackBool Bool (&&) True),
+    ("||",  variadicOp unpackBool Bool (||) False)
   ]
 
   where
@@ -167,16 +174,18 @@ builtinFunctions = [
     equalityOp f []     = return $ Bool True
     equalityOp f (x:xs) = return . Bool $ all (f x) xs
 
-    allBoolean :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
-    allBoolean f args = return . Bool $ all f args
+    typeCheck :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
+    typeCheck f args = return . Bool $ all f args
 
-    numericBinaryOp :: (a -> LispVal) -> (Integer -> Integer -> a) -> [LispVal] -> Fallible LispVal
-    numericBinaryOp con op [Number a, Number b] = return . con $ op a b
-    numericBinaryOp con op [a, b]               = Left $ TypeMismatch "number" a
-    numericBinaryOp _ _ args                    = Left $ NumArgs 2 args
+    binaryOp :: (LispVal -> Fallible a) -> (r -> LispVal) -> (a -> a -> r) -> [LispVal] -> Fallible LispVal
+    binaryOp ext cons f [a, b] = do
+      a' <- ext a
+      b' <- ext b
+      return . cons $ f a' b'
+    binaryOp _ _ _ args = Left $ NumArgs 2 args
 
-    numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> Fallible LispVal
-    numericVariadicOp op identity params = return . Number $ foldl op identity $ map (fromMaybe 0 . unpackNumber) params
+    variadicOp :: (LispVal -> Fallible a) -> (a -> LispVal) -> (a -> a -> a) -> a -> [LispVal] -> Fallible LispVal
+    variadicOp ext cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . ext) params
 
 eval :: LispVal -> Fallible LispVal
 eval (List [Symbol "quote", val]) = return val
@@ -193,7 +202,7 @@ apply name args = case lookup name builtinFunctions of
   Nothing -> Left $ UnboundVar name
 
 readExpr :: String -> Fallible LispVal
-readExpr input = first (ParseError . show) $ parse parseExpr "lisp" input
+readExpr input = Bifunctor.first (ParseError . show) $ parse parseExpr "lisp" input
 
 main :: IO ()
 main = getArgs >>= sourceFromArgs >>= either (putStrLn . ("Error:\n" ++) . show) print . (eval <=< readExpr)
