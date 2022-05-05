@@ -148,10 +148,18 @@ builtinFunctions = [
     ("-",  numericVariadicOp (-) 0),
     ("*",  numericVariadicOp (*) 1),
     ("/",  numericVariadicOp div 1),
-    ("modulo",  numericBinaryOp mod),
-    ("quotient",  numericBinaryOp quot),
-    ("remainder",  numericBinaryOp rem)
+    ("modulo",  numericBinaryOp Number mod),
+    ("quotient",  numericBinaryOp Number quot),
+    ("remainder",  numericBinaryOp Number rem),
+
+    ("=",  numericBinaryOp Bool (==)),
+    ("<",  numericBinaryOp Bool (<)),
+    (">",  numericBinaryOp Bool (>)),
+    ("/=",  numericBinaryOp Bool (/=)),
+    (">=",  numericBinaryOp Bool (>=)),
+    ("<=",  numericBinaryOp Bool (<=))
   ]
+
   where
     -- TODO: improve error handling
 
@@ -162,9 +170,10 @@ builtinFunctions = [
     allBoolean :: (LispVal -> Bool) -> [LispVal] -> Fallible LispVal
     allBoolean f args = return . Bool $ all f args
 
-    numericBinaryOp :: (Integer -> Integer -> Integer) -> [LispVal] -> Fallible LispVal
-    numericBinaryOp op [Number a, Number b] = return . Number $ op a b
-    numericBinaryOp op args                 = Left $ NumArgs 2 args
+    numericBinaryOp :: (a -> LispVal) -> (Integer -> Integer -> a) -> [LispVal] -> Fallible LispVal
+    numericBinaryOp con op [Number a, Number b] = return . con $ op a b
+    numericBinaryOp con op [a, b]               = Left $ TypeMismatch "number" a
+    numericBinaryOp _ _ args                    = Left $ NumArgs 2 args
 
     numericVariadicOp :: (Integer -> Integer -> Integer) -> Integer -> [LispVal] -> Fallible LispVal
     numericVariadicOp op identity params = return . Number $ foldl op identity $ map (fromMaybe 0 . unpackNumber) params
