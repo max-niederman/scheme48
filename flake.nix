@@ -1,45 +1,61 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-
-    nixpkgs.url = "nixpkgs/nixos-21.11";
+    haskell-nix.url = "github:input-output-hk/haskell.nix";
+    nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, haskell-nix }:
     flake-utils.lib.eachDefaultSystem
       (system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
-          inherit (pkgs) lib haskell haskellPackages;
+          overlays = [
+            haskell-nix.overlay
+            (self: super: {
+              vanessa =
+                self.haskell-nix.project'
+                  {
+                    src = ./.;
 
-          name = "vanessa";
+                    compiler-nix-name = "ghc8107";
 
-          project = devTools:
-            haskellPackages.developPackage {
-              root = lib.sourceFilesBySuffices ./. [ ".cabal" ".hs" ];
-              inherit name;
-              returnShellEnv = devTools != [ ];
+                    # development shell
+                    shell = {
+                      # haskell tools
+                      tools = {
+                        cabal = { };
+                        haskell-language-server = { };
+                      };
 
-              modifier = with haskell.lib.compose;
-                (lib.trivial.flip lib.trivial.pipe) [
-                  (addBuildTools devTools)
-                  dontHaddock
-                  enableStaticLibraries
-                  justStaticExecutables
-                  disableLibraryProfiling
-                  disableExecutableProfiling
-                ];
-            };
+                      # non-haskell tools
+                      buildInputs = with pkgs; [
+                        stylish-haskell
+                        nixpkgs-fmt
+                      ];
+                    };
+                  };
+            })
+          ];
+
+          pkgs = import nixpkgs {
+            inherit system overlays;
+            inherit (haskell-nix) config;
+          };
+          inherit (pkgs) lib;
+
+          flake = pkgs.vanessa.flake { };
         in
-        rec {
-          packages.vanessa = project [ ];
-          defaultPackage = packages.vanessa;
+        flake // {
+          defaultPackage = flake.packages."vanessa:exe:vanessa";
 
-          devShell = project (with haskellPackages; [
-            haskell-language-server
-            cabal-install
-            stylish-haskell
-          ]);
+          apps = rec {
+            vanessa = {
+              type = "app";
+              program = "${flake.packages."vanessa:exe:vanessa"}/bin/vanessa";
+            };
+
+            default = vanessa;
+          };
         }
-      );
+    );
 }

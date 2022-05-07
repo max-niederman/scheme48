@@ -6,7 +6,6 @@ import           System.Environment (getArgs)
 import           Vanessa.Core
 import           Vanessa.Eval
 import           Vanessa.Parse      (parseLisp)
-import           Vanessa.Value
 
 readExpr :: String -> Fallible LispVal
 readExpr input = Bifunctor.first (ParseError . show) $ parseLisp input
