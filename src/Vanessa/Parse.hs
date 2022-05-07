@@ -1,11 +1,12 @@
 module Vanessa.Parse (parseLisp, parseExpr) where
 
+import qualified Data.Bifunctor                as Bifunctor
 import           Numeric                       (readHex, readOct)
 import           Text.ParserCombinators.Parsec
 import           Vanessa.Core
 
-parseLisp :: String -> Either ParseError LispVal
-parseLisp input = parse parseExpr "lisp" input
+parseLisp :: String -> Fallible LispVal
+parseLisp = Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
 
 parseExpr :: Parser LispVal
 parseExpr = choice [parseQuoted, parsePair, parseString, parseNumber, parseSymbol]
