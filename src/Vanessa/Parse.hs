@@ -1,12 +1,16 @@
-module Vanessa.Parse (parseLisp, parseExpr) where
+module Vanessa.Parse (parseLisp, parseLisp', parseExpr) where
 
+import           Control.Monad.Trans.Except
 import qualified Data.Bifunctor                as Bifunctor
 import           Numeric                       (readHex, readOct)
 import           Text.ParserCombinators.Parsec
 import           Vanessa.Core
 
-parseLisp :: String -> Fallible LispVal
-parseLisp = Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
+parseLisp :: String -> LispExceptT IO LispVal
+parseLisp = returnInExcept . parseLisp'
+
+parseLisp' :: String -> LispExcept LispVal
+parseLisp' = except . Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
 
 parseExpr :: Parser LispVal
 parseExpr = choice [parseQuoted, parsePair, parseString, parseNumber, parseSymbol]

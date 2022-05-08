@@ -1,5 +1,6 @@
 module Vanessa.Value where
 
+import           Control.Monad.Trans.Except
 import           Vanessa.Core
 
 isSymbol :: LispVal -> Bool
@@ -22,18 +23,18 @@ isBoolean :: LispVal -> Bool
 isBoolean (Bool _) = True
 isBoolean _        = False
 
-unpackPair :: LispVal -> Fallible [LispVal]
+unpackPair :: LispVal -> LispExcept [LispVal]
 unpackPair (Pair n) = return n
-unpackPair val      = Left $ TypeMismatch "pair" val
+unpackPair val      = throwE $ TypeMismatch "pair" val
 
-unpackPairToCons :: LispVal -> Fallible (LispVal, LispVal)
+unpackPairToCons :: LispVal -> LispExcept (LispVal, LispVal)
 unpackPairToCons (Pair (car:cdr)) = return (car, Pair cdr)
-unpackPairToCons val              = Left $ TypeMismatch "pair" val
+unpackPairToCons val              = throwE $ TypeMismatch "pair" val
 
-unpackNumber :: LispVal -> Fallible Integer
+unpackNumber :: LispVal -> LispExcept Integer
 unpackNumber (Number n) = return n
-unpackNumber val        = Left $ TypeMismatch "number" val
+unpackNumber val        = throwE $ TypeMismatch "number" val
 
-unpackBool :: LispVal -> Fallible Bool
+unpackBool :: LispVal -> LispExcept Bool
 unpackBool (Bool b) = return b
-unpackBool val      = Left $ TypeMismatch "boolean" val
+unpackBool val      = throwE $ TypeMismatch "boolean" val

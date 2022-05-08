@@ -1,28 +1,36 @@
 module Main where
 
 import           Control.Monad
-import qualified Data.Bifunctor     as Bifunctor
-import           System.Environment (getArgs)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Except
+import           Control.Monad.Trans.State
+import qualified Data.Bifunctor             as Bifunctor
+import           System.Environment         (getArgs)
 import           System.IO
 import           Vanessa.Core
 import           Vanessa.Eval
-import           Vanessa.Parse      (parseLisp)
+import           Vanessa.Parse              (parseLisp)
 
-evalAndPrint :: String -> IO ()
-evalAndPrint = either (putStrLn . ("Error:\n" ++) . show) print . (eval <=< parseLisp)
+catchLispError :: LispExceptT IO a -> IO a
+catchLispError = runExceptT >=> either (fail . show) return
 
-repl :: IO ()
-repl = forever $ do
-  putStr "vanessa > "
-  hFlush stdout
-  getLine >>= evalAndPrint
+rep :: LispState ()
+rep = do
+  liftIO $ putStr "vanessa > " >> hFlush stdout
+  source <- liftIO getLine
+  parsed <- lift $ parseLisp source
+  evaled <- eval parsed
+  liftIO $ print evaled
 
-root :: [String] -> IO ()
-root [] = repl
+repl :: LispExceptT IO ()
+repl = evalStateT (forever rep) startEnv
+
+-- "root" as in the root of the argument trie
+root :: [String] -> LispExceptT IO ()
+root []         = repl
 root ("repl":_) = repl
-root (file:_) = do
-  source <- readFile file
-  evalAndPrint source
+root (file:_) = error "todo: load file"
 
 main :: IO ()
-main = getArgs >>= root
+main = getArgs >>= (catchLispError . root)

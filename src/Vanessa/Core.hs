@@ -1,4 +1,6 @@
 module Vanessa.Core where
+import           Control.Monad.Trans.Except
+import           Data.Functor.Identity
 
 data LispVal
   = Symbol String
@@ -14,7 +16,13 @@ data LispError
   | TypeMismatch String LispVal
   | UnboundVar String
 
-type Fallible = Either LispError
+type LispExceptT = ExceptT LispError
+type LispExcept = Except LispError
+
+-- useful for converting a `LispExcept` to a `LispExceptT m`
+-- TODO: there is probably a better way to do this, but i can't find it in `transformers`
+returnInExcept :: Monad m => Except e a -> ExceptT e m a
+returnInExcept = mapExceptT (return . runIdentity)
 
 instance Show LispVal where
   show (Symbol name)   = name
