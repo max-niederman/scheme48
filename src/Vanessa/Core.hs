@@ -1,6 +1,9 @@
 module Vanessa.Core where
 import           Control.Monad.Trans.Except
+import           Control.Monad.Trans.State
 import           Data.Functor.Identity
+import qualified Data.List.NonEmpty         as NE
+import qualified Data.Map.Lazy              as Map
 
 data LispVal
   = Symbol String
@@ -24,6 +27,10 @@ type LispExcept = LispExceptT Identity
 -- TODO: there is probably a better way to do this, but i can't find it in `transformers`
 returnInExcept :: Monad m => Except e a -> ExceptT e m a
 returnInExcept = mapExceptT (return . runIdentity)
+
+
+
+
 
 instance Show LispVal where
   show (Symbol name)   = name

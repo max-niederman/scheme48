@@ -10,10 +10,10 @@ import qualified Data.List.NonEmpty         as NE
 import           System.Environment         (getArgs)
 import           System.IO
 import           Vanessa.Core
-import           Vanessa.Eval
+import           Vanessa.Interpret
 import           Vanessa.Parse              (parseLisp)
 
-rep :: LispState ()
+rep :: LispInterp ()
 rep = do
   liftIO $ putStr "vanessa > " >> hFlush stdout
 
@@ -25,7 +25,7 @@ rep = do
   liftIO $ print evaled
 
 repl :: LispExceptT IO ()
-repl = evalStateT (forever rep) startEnv
+repl = evalStateT (forever rep) startState
 
 -- "root" as in the root of the argument trie
 root :: [String] -> LispExceptT IO ()

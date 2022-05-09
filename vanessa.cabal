@@ -24,7 +24,7 @@ extra-source-files: CHANGELOG.md
 library
   exposed-modules:
     Vanessa.Core
-    Vanessa.Eval
+    Vanessa.Interpret
     Vanessa.Parse
     Vanessa.Value
 

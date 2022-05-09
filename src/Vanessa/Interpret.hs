@@ -1,8 +1,8 @@
-module Vanessa.Eval (eval, LispEnv, startEnv, LispState) where
+module Vanessa.Interpret (eval, LispScope, LispState, startState, LispInterp) where
 
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Except
+import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State
 import           Data.Either                (fromRight)
 import qualified Data.List.NonEmpty         as NE
@@ -11,18 +11,25 @@ import           Data.Monoid                (First (First, getFirst))
 import           Vanessa.Core
 import           Vanessa.Value
 
--- an environment in which an expression may be executed
 -- reversed list of scopes, each containing a map of identifiers to values
-type LispEnv = NE.NonEmpty LispScope
+type LispState = NE.NonEmpty LispScope
 type LispScope = Map.Map String LispVal
 
-startEnv :: LispEnv
-startEnv = Map.empty NE.:| []
+startState :: LispState
+startState = Map.empty NE.:| []
 
-type LispState = StateT LispEnv (LispExceptT IO)
+type LispInterp = StateT LispState (LispExceptT IO)
+
+-- lifted operations
+
+throwE :: LispError -> LispInterp a
+throwE = lift . E.throwE
+
+catchE :: LispInterp a -> (LispError -> LispInterp a) -> LispInterp a
+catchE = liftCatch E.catchE
 
 -- evaluate a lisp expression and execute its side effects
-eval :: LispVal -> LispState LispVal
+eval :: LispVal -> LispInterp LispVal
 
 eval (Pair [Symbol "quote", val]) = return val
 
@@ -31,16 +38,16 @@ eval (Pair [Symbol "if", pred, conseq, alt]) = do
   case pred' of
     Bool True  -> eval conseq
     Bool False -> eval alt
-    _          -> lift . throwE $ TypeMismatch "boolean" pred'
+    _          -> throwE $ TypeMismatch "boolean" pred'
 
 eval (Pair [Symbol "defined?", Symbol id])    = Bool <$> isDefined id
 eval (Pair [Symbol "define", Symbol id, val]) = eval val >>= defineVar id >> return val
-eval (Pair [Symbol "define", id, _])          = lift . throwE $ TypeMismatch "symbol" id
-eval (Pair (Symbol "define":args))            = lift . throwE $ NumArgs 2 args
+eval (Pair [Symbol "define", id, _])          = throwE $ TypeMismatch "symbol" id
+eval (Pair (Symbol "define":args))            = throwE $ NumArgs 2 args
 eval (Pair [Symbol "set!", Symbol id, val])   = eval val >>= setVar id >> return val
-eval (Pair [Symbol "set!", id, _])            = lift . throwE $ TypeMismatch "symbol" id
-eval (Pair (Symbol "set!":args))              = lift . throwE $ NumArgs 2 args
-eval (Symbol id)                              = getVar id >>= maybe (lift . throwE $ UnboundVar id) return
+eval (Pair [Symbol "set!", id, _])            = throwE $ TypeMismatch "symbol" id
+eval (Pair (Symbol "set!":args))              = throwE $ NumArgs 2 args
+eval (Symbol id)                              = getVar id >>= maybe (throwE $ UnboundVar id) return
 
 eval (Pair [Symbol "print", expr]) = do
   val <- eval expr
@@ -54,45 +61,45 @@ eval val@(Number _) = return val
 eval val@(String _) = return val
 eval val@(Bool _)   = return val
 
-defineVar :: String -> LispVal -> LispState ()
+defineVar :: String -> LispVal -> LispInterp ()
 defineVar id val = do
   env <- get
   let old = NE.head env
   let new = Map.insert id val old
   put $ new NE.:| NE.tail env
 
-setVar :: String -> LispVal -> LispState ()
+setVar :: String -> LispVal -> LispInterp ()
 setVar id val = get >>= lift . returnInExcept . setVar' . NE.toList >>= put
   where
-    setVar' :: [LispScope] -> LispExcept LispEnv
-    setVar' [] = throwE $ UnboundVar id
+    setVar' :: [LispScope] -> LispExcept LispState
+    setVar' [] = E.throwE $ UnboundVar id
     setVar' (scope:scopes) = if Map.member id scope
       then return $ Map.insert id val scope NE.:| scopes
       else setVar' scopes
 
-getVar :: String -> LispState (Maybe LispVal)
+getVar :: String -> LispInterp (Maybe LispVal)
 getVar id = getFirst . foldMap (First . Map.lookup id) <$> get
 
-isDefined :: String -> LispState Bool
+isDefined :: String -> LispInterp Bool
 isDefined id = any (Map.member id) <$> get
 
-pushScope :: LispScope -> LispState ()
+pushScope :: LispScope -> LispInterp ()
 pushScope scope = modify $ NE.cons scope
 
-pushEmptyScope :: LispState ()
+pushEmptyScope :: LispInterp ()
 pushEmptyScope = pushScope Map.empty
 
-popScope :: LispState ()
+popScope :: LispInterp ()
 popScope = do
   env <- get
   case NE.tail env of
-    []   -> lift . throwE $ Internal "popScope: empty environment"
+    []   -> throwE $ Internal "popScope: empty environment"
     s:ss -> put $ s NE.:| ss
 
-apply :: String -> [LispVal] -> LispState LispVal
+apply :: String -> [LispVal] -> LispInterp LispVal
 apply name args = case lookup name builtinFunctions of
   Just f  -> lift $ f args
-  Nothing -> lift . throwE $ UnboundVar name
+  Nothing -> throwE $ UnboundVar name
 
 builtinFunctions :: [(String, [LispVal] -> LispExceptT IO LispVal)]
 builtinFunctions = [
@@ -140,20 +147,20 @@ builtinFunctions = [
 
     unaryOp :: (LispVal -> LispExcept a) -> (r -> LispVal) -> (a -> r) -> [LispVal] -> LispExceptT IO LispVal
     unaryOp unpack con f [a] = returnInExcept $ con . f <$> unpack a
-    unaryOp _ _ _ args       = throwE $ NumArgs 1 args
+    unaryOp _ _ _ args       = E.throwE $ NumArgs 1 args
 
     binaryOp :: (LispVal -> LispExcept a) -> (r -> LispVal) -> (a -> a -> r) -> [LispVal] -> LispExceptT IO LispVal
     binaryOp unpack con f [a, b] = do
       a' <- returnInExcept $ unpack a
       b' <- returnInExcept $ unpack b
       return . con $ f a' b'
-    binaryOp _ _ _ args = throwE $ NumArgs 2 args
+    binaryOp _ _ _ args = E.throwE $ NumArgs 2 args
 
     variadicFoldingOp :: (LispVal -> LispExcept a) -> (a -> LispVal) -> (a -> a -> a) -> a -> [LispVal] -> LispExceptT IO LispVal
-    variadicFoldingOp unpack cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . runExcept . unpack) params
+    variadicFoldingOp unpack cons op identity params = return . cons $ foldl op identity $ map (fromRight identity . E.runExcept . unpack) params
 
     -- we can't use `binaryOp` for this because the unpacking is different for `car` and `cdr`
     consOp :: [LispVal] -> LispExceptT IO LispVal
     consOp [car, Pair cdr] = return $ Pair (car : cdr)
-    consOp [_, cdr]        = throwE $ TypeMismatch "pair" cdr
-    consOp args            = throwE $ NumArgs 2 args
+    consOp [_, cdr]        = E.throwE $ TypeMismatch "pair" cdr
+    consOp args            = E.throwE $ NumArgs 2 args
