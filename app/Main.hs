@@ -16,10 +16,12 @@ import           Vanessa.Parse              (parseLisp)
 rep :: LispState ()
 rep = do
   liftIO $ putStr "vanessa > " >> hFlush stdout
+
   source <- liftIO getLine
   parsed <- lift $ parseLisp source
   evaled <- eval parsed
-  liftIO (putStr "State: ") >> get >>= liftIO . print . NE.toList
+
+  liftIO (putStr "state: ") >> get >>= liftIO . print . NE.toList
   liftIO $ print evaled
 
 repl :: LispExceptT IO ()

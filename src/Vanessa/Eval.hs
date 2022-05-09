@@ -12,7 +12,7 @@ import           Vanessa.Core
 import           Vanessa.Value
 
 -- an environment in which an expression may be executed
--- reversed list of scopes, each containing a map of bindings to values
+-- reversed list of scopes, each containing a map of identifiers to values
 type LispEnv = NE.NonEmpty LispScope
 type LispScope = Map.Map String LispVal
 
@@ -33,32 +33,48 @@ eval (Pair [Symbol "if", pred, conseq, alt]) = do
     Bool False -> eval alt
     _          -> lift . throwE $ TypeMismatch "boolean" pred'
 
-eval (Pair [Symbol "bind", Symbol binding, val]) = eval val >>= setVar binding >> return val
-eval (Pair [Symbol "bind", binding, _])          = lift . throwE $ TypeMismatch "symbol" binding
-eval (Pair (Symbol "bind":args))                 = lift . throwE $ NumArgs 2 args
-eval (Symbol binding)                            = getVar binding >>= maybe (lift . throwE $ UnboundVar binding) return
+eval (Pair [Symbol "defined?", Symbol id])    = Bool <$> isDefined id
+eval (Pair [Symbol "define", Symbol id, val]) = eval val >>= defineVar id >> return val
+eval (Pair [Symbol "define", id, _])          = lift . throwE $ TypeMismatch "symbol" id
+eval (Pair (Symbol "define":args))            = lift . throwE $ NumArgs 2 args
+eval (Pair [Symbol "set!", Symbol id, val])   = eval val >>= setVar id >> return val
+eval (Pair [Symbol "set!", id, _])            = lift . throwE $ TypeMismatch "symbol" id
+eval (Pair (Symbol "set!":args))              = lift . throwE $ NumArgs 2 args
+eval (Symbol id)                              = getVar id >>= maybe (lift . throwE $ UnboundVar id) return
 
 eval (Pair [Symbol "print", expr]) = do
   val <- eval expr
   liftIO $ print val
   return $ Pair []
 
-eval (Pair (Symbol func : args))  = mapM eval args >>= apply func
+eval (Pair (Symbol func : args)) = mapM eval args >>= apply func
 
-eval val@(Pair _)                 = return val
-eval val@(Number _)               = return val
-eval val@(String _)               = return val
-eval val@(Bool _)                 = return val
+eval val@(Pair _)   = return val
+eval val@(Number _) = return val
+eval val@(String _) = return val
+eval val@(Bool _)   = return val
 
-setVar :: String -> LispVal -> LispState ()
-setVar name val = do
+defineVar :: String -> LispVal -> LispState ()
+defineVar id val = do
   env <- get
   let old = NE.head env
-  let new = Map.insert name val old
+  let new = Map.insert id val old
   put $ new NE.:| NE.tail env
 
+setVar :: String -> LispVal -> LispState ()
+setVar id val = get >>= lift . returnInExcept . setVar' . NE.toList >>= put
+  where
+    setVar' :: [LispScope] -> LispExcept LispEnv
+    setVar' [] = throwE $ UnboundVar id
+    setVar' (scope:scopes) = if Map.member id scope
+      then return $ Map.insert id val scope NE.:| scopes
+      else setVar' scopes
+
 getVar :: String -> LispState (Maybe LispVal)
-getVar name = getFirst . foldMap (First . Map.lookup name) <$> get
+getVar id = getFirst . foldMap (First . Map.lookup id) <$> get
+
+isDefined :: String -> LispState Bool
+isDefined id = any (Map.member id) <$> get
 
 pushScope :: LispScope -> LispState ()
 pushScope scope = modify $ NE.cons scope

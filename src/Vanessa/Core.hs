@@ -18,7 +18,7 @@ data LispError
   | Internal String
 
 type LispExceptT = ExceptT LispError
-type LispExcept = Except LispError
+type LispExcept = LispExceptT Identity
 
 -- useful for converting a `LispExcept` to a `LispExceptT m`
 -- TODO: there is probably a better way to do this, but i can't find it in `transformers`
