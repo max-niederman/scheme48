@@ -5,39 +5,73 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.State
 import           Data.Either                (fromRight)
-import           Data.Functor.Identity
+import qualified Data.List.NonEmpty         as NE
+import qualified Data.Map.Lazy              as Map
+import           Data.Monoid                (First (First, getFirst))
 import           Vanessa.Core
 import           Vanessa.Value
 
 -- an environment in which an expression may be executed
 -- reversed list of scopes, each containing a map of bindings to values
-type LispEnv = [[(String, LispVal)]]
+type LispEnv = NE.NonEmpty LispScope
+type LispScope = Map.Map String LispVal
 
 startEnv :: LispEnv
-startEnv = [[]]
+startEnv = Map.empty NE.:| []
 
 type LispState = StateT LispEnv (LispExceptT IO)
 
 -- evaluate a lisp expression and execute its side effects
 eval :: LispVal -> LispState LispVal
+
 eval (Pair [Symbol "quote", val]) = return val
+
 eval (Pair [Symbol "if", pred, conseq, alt]) = do
   pred' <- eval pred
   case pred' of
     Bool True  -> eval conseq
     Bool False -> eval alt
     _          -> lift . throwE $ TypeMismatch "boolean" pred'
+
+eval (Pair [Symbol "bind", Symbol binding, val]) = eval val >>= setVar binding >> return val
+eval (Pair [Symbol "bind", binding, _])          = lift . throwE $ TypeMismatch "symbol" binding
+eval (Pair (Symbol "bind":args))                 = lift . throwE $ NumArgs 2 args
+eval (Symbol binding)                            = getVar binding >>= maybe (lift . throwE $ UnboundVar binding) return
+
 eval (Pair [Symbol "print", expr]) = do
   val <- eval expr
   liftIO $ print val
   return $ Pair []
+
 eval (Pair (Symbol func : args))  = mapM eval args >>= apply func
 
-eval val@(Symbol _)               = return val
 eval val@(Pair _)                 = return val
 eval val@(Number _)               = return val
 eval val@(String _)               = return val
 eval val@(Bool _)                 = return val
+
+setVar :: String -> LispVal -> LispState ()
+setVar name val = do
+  env <- get
+  let old = NE.head env
+  let new = Map.insert name val old
+  put $ new NE.:| NE.tail env
+
+getVar :: String -> LispState (Maybe LispVal)
+getVar name = getFirst . foldMap (First . Map.lookup name) <$> get
+
+pushScope :: LispScope -> LispState ()
+pushScope scope = modify $ NE.cons scope
+
+pushEmptyScope :: LispState ()
+pushEmptyScope = pushScope Map.empty
+
+popScope :: LispState ()
+popScope = do
+  env <- get
+  case NE.tail env of
+    []   -> lift . throwE $ Internal "popScope: empty environment"
+    s:ss -> put $ s NE.:| ss
 
 apply :: String -> [LispVal] -> LispState LispVal
 apply name args = case lookup name builtinFunctions of

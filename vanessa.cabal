@@ -30,6 +30,7 @@ library
 
   build-depends:
     , base          ^>=4.14.3.0
+    , containers    ^>=0.6.5.1
     , parsec        ^>=3.1.15.0
     , transformers  ^>=0.5.6.2
 

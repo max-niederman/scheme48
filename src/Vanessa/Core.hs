@@ -15,6 +15,7 @@ data LispError
   | NumArgs Integer [LispVal]
   | TypeMismatch String LispVal
   | UnboundVar String
+  | Internal String
 
 type LispExceptT = ExceptT LispError
 type LispExcept = Except LispError
@@ -40,3 +41,5 @@ instance Show LispError where
     "Expected " ++ expected ++ ", but got " ++ show actual
   show (UnboundVar name) =
     "Variable '" ++ name ++ "' is unbound"
+  show (Internal message) =
+    "Internal error: " ++ message
