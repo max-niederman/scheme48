@@ -23,6 +23,10 @@ isBoolean :: LispVal -> Bool
 isBoolean (Bool _) = True
 isBoolean _        = False
 
+unpackSymbol :: LispVal -> LispExcept String
+unpackSymbol (Symbol s) = return s
+unpackSymbol val        = throwE $ TypeMismatch "symbol" val
+
 unpackPair :: LispVal -> LispExcept [LispVal]
 unpackPair (Pair n) = return n
 unpackPair val      = throwE $ TypeMismatch "pair" val
