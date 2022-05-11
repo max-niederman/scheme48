@@ -15,7 +15,7 @@ import           Vanessa.Parse              (parseLisp)
 
 rep :: LispInterp ()
 rep = do
-  liftIO $ putStr "vanessa > " >> hFlush stdout
+  liftIO $ putStr "> " >> hFlush stdout
 
   source <- liftIO getLine
   parsed <- lift $ parseLisp source

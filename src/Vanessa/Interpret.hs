@@ -62,11 +62,6 @@ eval (Pair [Symbol "lambda", Pair params, body]) = do
 
 -- TODO: implement let and function definition syntax sugar
 
-eval (Pair [Symbol "print", expr]) = do
-  val <- eval expr
-  liftIO $ print val
-  return $ Pair []
-
 eval (Pair (func:args)) = do
   func <- eval func
   args <- mapM eval args
@@ -80,7 +75,12 @@ eval val@Func {}      = return val
 eval val@(PrimFunc _) = return val
 
 apply :: LispVal -> [LispVal] -> LispInterp LispVal
-apply Func { param, body, closure } args = pushScope closure >> paramToScope param args >>= pushScope >> eval body >>= returnFromScope >>= popScope
+apply Func { param, body, closure } args = do
+  pushScope closure
+  paramToScope param args >>= pushScope
+  ret <- eval body >>= returnFromScope
+  popScope
+  return ret
 apply (PrimFunc f) args         = lift $ f args
 apply func _                    = throwE $ TypeMismatch "function" func
 
@@ -95,28 +95,12 @@ paramToScope (NaryParam ps) vs   =
 -- this allows functions to close over variables from a scope before they pass out of it
 returnFromScope :: LispVal -> LispInterp LispVal
 returnFromScope val = do
-  scope <- NE.head <$> get
+  scope <- popScope
   case val of
     -- NOTE: since we're using the lazy `Map`, it's probably fine to add the entire scope to the closure,
     --       but we could also filter it and add only the entries corresponding to free variables
     func @ Func { closure } -> return func { closure = Map.union closure scope }
-    _ -> return val
-
--- returns the set of free variables in an S-expression
--- NOTE: this function is currently not being used, but it may be useful again in the future (see note above in `returnFromScope`)
-freeVars :: LispVal -> Set.Set String
--- first we deal with functions
-freeVars (Pair [Symbol "lambda", Symbol param, body]) = Set.delete param $ freeVars body
-freeVars (Pair [Symbol "lambda", Pair params, body]) = Set.difference (freeVars body) $ Set.fromList (rights (map (runExcept . unpackSymbol) params))
--- evaluated lambda-expressions are exactly the same
-freeVars Func { param = VariadicParam param, body, closure } = Set.difference (freeVars body) $ Set.insert param (Map.keysSet closure)
-freeVars Func { param = NaryParam params, body, closure } = Set.difference (freeVars body) $ Set.union (Set.fromList params) (Map.keysSet closure)
--- then we deal with lists
-freeVars (Pair xs) = Set.unions $ map freeVars xs
--- symbols are the origin of all free variables
-freeVars (Symbol s) = Set.singleton s
--- other values (atoms) have no free variables
-freeVars _ = Set.empty
+    _                       -> return val
 
 defineVar :: String -> LispVal -> LispInterp ()
 defineVar id val = do
@@ -146,15 +130,15 @@ pushScope scope = modify $ NE.cons scope
 pushEmptyScope :: LispInterp ()
 pushEmptyScope = pushScope Map.empty
 
-popScope :: a -> LispInterp a
-popScope x = popScope_ >> return x
+popScopePass :: a -> LispInterp a
+popScopePass x = popScope >> return x
 
-popScope_ :: LispInterp ()
-popScope_ = do
+popScope :: LispInterp LispScope
+popScope = do
   env <- get
-  case NE.tail env of
-    []   -> throwE $ Internal "popScope: empty environment"
-    s:ss -> put $ s NE.:| ss
+  case env of
+    _ NE.:| []     -> throwE $ Internal "popScope: empty environment"
+    p NE.:| (s:ss) -> put (s NE.:| ss) >> return p
 
 ambientScope :: LispScope
 ambientScope = Map.fromList [
@@ -190,7 +174,7 @@ ambientScope = Map.fromList [
     ("<=",  PrimFunc $ binaryOp unpackNumber Bool (<=)),
 
     -- debugging functions
-    ("free", PrimFunc $ unaryOp return (Pair . map Symbol . Set.toList) freeVars)
+    ("print", PrimFunc $ fmap (const $ Pair []) . mapM (liftIO . print))
   ]
 
   where

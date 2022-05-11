@@ -12,9 +12,9 @@ data LispVal
   | Number Integer
   | String String
   | Bool Bool
-  | Func { param    :: LispParam
-         , body     :: LispVal
-         , closure  :: Map.Map String LispVal
+  | Func { param   :: LispParam
+         , body    :: LispVal
+         , closure :: Map.Map String LispVal
          }
   | PrimFunc ([LispVal] -> LispExceptT IO LispVal)
 
