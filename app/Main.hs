@@ -5,24 +5,25 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.State
-import qualified Data.Bifunctor             as Bifunctor
-import qualified Data.List.NonEmpty         as NE
-import           System.Environment         (getArgs)
+import qualified Data.Bifunctor                 as Bifunctor
+import qualified Data.List.NonEmpty             as NE
+import           System.Environment             (getArgs)
 import           System.IO
+import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Vanessa.Core
+import           Vanessa.Debug
 import           Vanessa.Interpret
-import           Vanessa.Parse              (parseLisp)
+import           Vanessa.Parse                  (parseLisp)
 
 rep :: LispInterp ()
 rep = do
   liftIO $ putStr "> " >> hFlush stdout
-
   source <- liftIO getLine
   parsed <- lift $ parseLisp source
   evaled <- eval parsed
-
-  liftIO (putStr "state: ") >> get >>= liftIO . print . NE.toList
-  liftIO $ print evaled
+  liftIO (putStr "state:\n") >> get >>=
+    liftIO . putStrLn . prettyShow . NE.toList
+  liftIO $ putStrLn $ prettyShow evaled
 
 repl :: LispExceptT IO ()
 repl = evalStateT (forever rep) startState

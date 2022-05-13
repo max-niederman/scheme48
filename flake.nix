@@ -25,6 +25,7 @@
                       tools = {
                         cabal = { };
                         haskell-language-server = { };
+                        hindent = { };
                       };
 
                       # non-haskell tools

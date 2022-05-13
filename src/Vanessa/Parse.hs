@@ -1,4 +1,8 @@
-module Vanessa.Parse (parseLisp, parseLisp', parseExpr) where
+module Vanessa.Parse
+  ( parseLisp
+  , parseLisp'
+  , parseExpr
+  ) where
 
 import           Control.Monad.Trans.Except
 import qualified Data.Bifunctor                as Bifunctor
@@ -10,20 +14,23 @@ parseLisp :: String -> LispExceptT IO LispVal
 parseLisp = returnInExcept . parseLisp'
 
 parseLisp' :: String -> LispExcept LispVal
-parseLisp' = except . Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
+parseLisp' =
+  except . Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
 
 parseExpr :: Parser LispVal
-parseExpr = choice [parseQuoted, parsePair, parseString, parseNumber, parseSymbol]
+parseExpr =
+  choice [parseQuoted, parsePair, parseString, parseNumber, parseSymbol]
 
 parseSymbol :: Parser LispVal
 parseSymbol = do
   first <- letter <|> symbol
   rest <- many (letter <|> digit <|> symbol)
   let symbol = first : rest
-  return $ case symbol of
-    "#t" -> Bool True
-    "#f" -> Bool False
-    _    -> Symbol symbol
+  return $
+    case symbol of
+      "#t" -> Bool True
+      "#f" -> Bool False
+      _    -> Symbol symbol
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
@@ -40,20 +47,18 @@ parsePair = do
 
 --   TODO: implement the rest of the R5RS number spec i.e. floating points, binary notation, complex numbers
 parseNumber :: Parser LispVal
-parseNumber =
-  try parseEscaped <|> parseDecimal
+parseNumber = try parseEscaped <|> parseDecimal
   where
     parseDecimal :: Parser LispVal
     parseDecimal = Number . read <$> many1 digit
-
     parseEscaped :: Parser LispVal
     parseEscaped =
-      char '#'
-        >> choice
-          [ char 'o' >> Number . fst . head . readOct <$> many1 octDigit,
-            char 'd' >> parseDecimal,
-            char 'x' >> Number . fst . head . readHex <$> many1 hexDigit
-          ]
+      char '#' >>
+      choice
+        [ char 'o' >> Number . fst . head . readOct <$> many1 octDigit
+        , char 'd' >> parseDecimal
+        , char 'x' >> Number . fst . head . readHex <$> many1 hexDigit
+        ]
 
 parseString :: Parser LispVal
 parseString = do
@@ -66,11 +71,12 @@ parseString = do
     parseEscape = do
       char '\\'
       code <- oneOf ['\\', '"', 'n', 'r', 't']
-      return $ case code of
-        'n' -> '\n'
-        'r' -> '\r'
-        't' -> '\t'
-        _   -> code
+      return $
+        case code of
+          'n' -> '\n'
+          'r' -> '\r'
+          't' -> '\t'
+          _   -> code
 
 whitespace :: Parser ()
 whitespace = skipMany1 space
