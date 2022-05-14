@@ -1,12 +1,12 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 module Vanessa.Debug where
 
 import qualified Data.Map                       as Map
 import           Text.PrettyPrint
-import           Text.PrettyPrint.HughesPJClass
+import           Text.PrettyPrint.HughesPJClass hiding ((<>))
 import           Vanessa.Core
-import           Vanessa.Interpret              (LispState)
 
 instance Pretty LispVal where
   pPrint (Symbol name) = text name
@@ -39,4 +39,10 @@ instance Show LispError where
   show (UnboundVar name) = "Variable '" ++ name ++ "' is unbound"
   show (Internal message) = "Internal error: " ++ message
 
-instance Pretty LispState
+instance Pretty (Map.Map String LispVal) where
+  pPrint s =
+    braces $
+    nest 1 $
+    vcat $
+    map (\(id, val) -> text id <+> equals <+> pPrint val) $ Map.toAscList s
+  pPrintList _ ss = brackets $ nest 1 $ vcat $ map pPrint ss
