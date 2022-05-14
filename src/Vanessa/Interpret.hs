@@ -20,6 +20,7 @@ import           Data.Monoid                    (First (First, getFirst))
 import qualified Data.Set                       as Set
 import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Vanessa.Core
+import           Vanessa.Debug
 import           Vanessa.Value
 
 -- reversed list of scopes, each containing a map of identifiers to values
@@ -65,7 +66,7 @@ eval (Pair [Symbol "lambda", Symbol param, body]) =
 eval (Pair [Symbol "lambda", Pair params, body]) = do
   paramNames <- lift $ mapM (returnInExcept . unpackSymbol) params
   return $ Func {param = NaryParam paramNames, body, closure = Map.empty}
--- TODO: implement let and function definition syntax sugar
+eval (Pair [Symbol "let", Pair bindings, body]) = pairsToBindings bindings >>= pushScope >> eval body >>= returnFromScope
 eval (Pair (func:args)) = do
   func <- eval func
   args <- mapM eval args
@@ -86,6 +87,15 @@ apply Func {param, body, closure} args = do
   return ret
 apply (PrimFunc f) args = lift $ f args
 apply func _ = throwE $ TypeMismatch "function" func
+
+pairsToBindings :: [LispVal] -> LispInterp LispScope
+pairsToBindings [] = return Map.empty
+pairsToBindings (Pair [Symbol id, val]:ps) = do
+  val <- eval val
+  rest <- pairsToBindings ps
+  -- prefer the existing value because it is later in the binding list
+  return $ Map.insertWith (\ _ x -> x) id val rest
+pairsToBindings ps = throwE $ TypeMismatch "list of binding pair lists" $ Pair ps
 
 paramToScope :: LispParam -> [LispVal] -> LispInterp LispScope
 paramToScope (VariadicParam p) v = return $ Map.singleton p $ Pair v
