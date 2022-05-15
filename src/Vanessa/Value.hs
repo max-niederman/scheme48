@@ -1,7 +1,7 @@
 module Vanessa.Value where
 
-import           Control.Monad.Trans.Except
-import           Vanessa.Core
+import           Control.Monad.Trans.Except (throwE)
+import           Vanessa.Core               hiding (throwE)
 
 isSymbol :: LispVal -> Bool
 isSymbol (Symbol _) = True
@@ -34,6 +34,10 @@ unpackPair val      = throwE $ TypeMismatch "pair" val
 unpackPairToCons :: LispVal -> LispExcept (LispVal, LispVal)
 unpackPairToCons (Pair (car:cdr)) = return (car, Pair cdr)
 unpackPairToCons val              = throwE $ TypeMismatch "pair" val
+
+unpackString :: LispVal -> LispExcept String
+unpackString (String s) = return s
+unpackString val        = throwE $ TypeMismatch "string" val
 
 unpackNumber :: LispVal -> LispExcept Integer
 unpackNumber (Number n) = return n

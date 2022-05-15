@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 
-module Vanessa.Debug where
+module Vanessa.Debug
+  (
+  ) where
 
 import qualified Data.Map                       as Map
 import           Text.PrettyPrint
@@ -15,7 +17,6 @@ instance Pretty LispVal where
   pPrint (String s) = doubleQuotes $ text s
   pPrint (Bool True) = text "#t"
   pPrint (Bool False) = text "#f"
-  pPrint (PrimFunc _) = text "{primitive function}"
   pPrint Func {param, body, closure} =
     let combinator = parens $ hsep [text "lambda", pPrint param, pPrint body]
         closureBindings =
@@ -24,6 +25,11 @@ instance Pretty LispVal where
      in if Map.null closure
           then combinator
           else parens $ hsep [text "let", closureBindings, combinator]
+  pPrint (PrimFunc _) = primitiveVal "function"
+  pPrint (Port _) = primitiveVal "port"
+
+primitiveVal :: String -> Doc
+primitiveVal s = text $ "<" ++ s ++ " primitive>"
 
 instance Pretty LispParam where
   pPrint (NaryParam ps)    = pPrint $ Pair $ map Symbol ps
