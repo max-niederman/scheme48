@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Main where
 
 import           Control.Monad
@@ -13,14 +15,13 @@ import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Vanessa.Core
 import           Vanessa.Debug
 import           Vanessa.Interpret
-import           Vanessa.Parse                  (parseLisp)
+import           Vanessa.Parse
 
 rep :: LispInterp ()
 rep = do
   liftIO $ putStr "> " >> hFlush stdout
   source <- liftIO getLine
-  parsed <- lift $ parseLisp source
-  evaled <- eval parsed
+  evaled <- lift (parseLisp source) >>= eval
   liftIO (putStr "state:\n") >> get >>=
     liftIO . putStrLn . prettyShow . NE.toList
   liftIO $ putStrLn $ prettyShow evaled
@@ -28,14 +29,21 @@ rep = do
 repl :: LispExceptT IO ()
 repl = evalStateT (forever rep) startState
 
+file :: String -> [String] -> LispExceptT IO ()
+file path _ = do
+  source <- liftIO $ readFile path
+  parsed <- parseLispMany source
+  evaled <- evalStateT (mapM eval parsed) startState
+  return ()
+
 -- "root" as in the root of the argument trie
 root :: [String] -> LispExceptT IO ()
-root []         = repl
-root ("repl":_) = repl
-root (file:_)   = error "todo: load file"
+root []            = repl
+root ("repl":_)    = repl
+root (filepath:as) = file filepath as
 
 catchLispError :: LispExceptT IO a -> IO a
 catchLispError = runExceptT >=> either (fail . show) return
 
 main :: IO ()
-main = getArgs >>= (catchLispError . root)
+main = getArgs >>= catchLispError . root

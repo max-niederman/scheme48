@@ -1,6 +1,6 @@
 module Vanessa.Parse
   ( parseLisp
-  , parseLisp'
+  , parseLispMany
   , parseExpr
   ) where
 
@@ -10,12 +10,17 @@ import           Numeric                       (readHex, readOct)
 import           Text.ParserCombinators.Parsec
 import           Vanessa.Core
 
-parseLisp :: String -> LispExceptT IO LispVal
-parseLisp = returnInExcept . parseLisp'
-
-parseLisp' :: String -> LispExcept LispVal
-parseLisp' =
+parseLisp :: Monad m => String -> LispExceptT m LispVal
+parseLisp =
+  returnInExcept .
   except . Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
+
+parseLispMany :: Monad m => String -> LispExceptT m [LispVal]
+parseLispMany =
+  returnInExcept .
+  except .
+  Bifunctor.first (ParseError . show) .
+  parse (sepEndBy parseExpr newline) "lisp"
 
 parseExpr :: Parser LispVal
 parseExpr =
@@ -79,7 +84,7 @@ parseString = do
           _   -> code
 
 whitespace :: Parser ()
-whitespace = skipMany1 space
+whitespace = skipMany1 $ space <|> newline
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"

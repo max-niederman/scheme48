@@ -66,7 +66,8 @@ eval (Pair [Symbol "lambda", Symbol param, body]) =
 eval (Pair [Symbol "lambda", Pair params, body]) = do
   paramNames <- lift $ mapM (returnInExcept . unpackSymbol) params
   return $ Func {param = NaryParam paramNames, body, closure = Map.empty}
-eval (Pair [Symbol "let", Pair bindings, body]) = pairsToBindings bindings >>= pushScope >> eval body >>= returnFromScope
+eval (Pair [Symbol "let", Pair bindings, body]) =
+  pairsToBindings bindings >>= pushScope >> eval body >>= returnFromScope
 eval (Pair (func:args)) = do
   func <- eval func
   args <- mapM eval args
@@ -94,8 +95,9 @@ pairsToBindings (Pair [Symbol id, val]:ps) = do
   val <- eval val
   rest <- pairsToBindings ps
   -- prefer the existing value because it is later in the binding list
-  return $ Map.insertWith (\ _ x -> x) id val rest
-pairsToBindings ps = throwE $ TypeMismatch "list of binding pair lists" $ Pair ps
+  return $ Map.insertWith (\_ x -> x) id val rest
+pairsToBindings ps =
+  throwE $ TypeMismatch "list of binding pair lists" $ Pair ps
 
 paramToScope :: LispParam -> [LispVal] -> LispInterp LispScope
 paramToScope (VariadicParam p) v = return $ Map.singleton p $ Pair v
