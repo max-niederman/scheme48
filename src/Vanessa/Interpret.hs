@@ -10,16 +10,20 @@ module Vanessa.Interpret
 
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
-import qualified Control.Monad.Trans.Except as E
+import qualified Control.Monad.Trans.Except     as E
 import           Control.Monad.Trans.State
-import           Data.Either                (fromRight, rights)
-import qualified Data.List.NonEmpty         as NE
-import qualified Data.Map.Lazy              as Map
-import qualified Data.Monoid                as Monoid
-import qualified Data.Set                   as Set
-import           GHC.IO.IOMode              (IOMode (ReadMode, WriteMode))
-import           System.IO                  (hClose, openFile)
+import           Data.Either                    (fromRight, rights)
+import           Data.Functor                   ((<&>))
+import qualified Data.List.NonEmpty             as NE
+import qualified Data.Map.Lazy                  as Map
+import qualified Data.Monoid                    as Monoid
+import qualified Data.Set                       as Set
+import           GHC.IO.IOMode                  (IOMode (ReadMode, WriteMode))
+import qualified System.IO                      as IO
+import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Vanessa.Core
+import           Vanessa.Debug
+import           Vanessa.Parse
 import           Vanessa.Value
 
 startState :: LispState
@@ -37,6 +41,10 @@ eval (Pair [Symbol "if", pred, conseq, alt]) = do
 eval (Pair [Symbol "defined?", Symbol id]) = Bool <$> isDefined id
 eval (Pair [Symbol "define", Symbol id, val]) =
   eval val >>= defineVar id >> return val
+eval (Pair [Symbol "define", Pair (Symbol id:params), body]) =
+  eval
+    (Pair
+       [Symbol "define", Symbol id, Pair [Symbol "lambda", Pair params, body]])
 eval (Pair [Symbol "define", id, _]) = throwE $ TypeMismatch "symbol" id
 eval (Pair (Symbol "define":args)) = throwE $ NumArgs 2 args
 eval (Pair [Symbol "set!", Symbol id, val]) =
@@ -122,11 +130,11 @@ setVar id val = get >>= lift . returnInExcept . setVar' . NE.toList >>= put
 getVar :: String -> LispInterp (Maybe LispVal)
 getVar id =
   Monoid.getFirst .
-  foldMap (Monoid.First . Map.lookup id) . (ambientScope NE.<|) <$>
+  foldMap (Monoid.First . Map.lookup id) . (builtinScope NE.<|) <$>
   get
 
 isDefined :: String -> LispInterp Bool
-isDefined id = any (Map.member id) . (ambientScope NE.<|) <$> get
+isDefined id = any (Map.member id) . (builtinScope NE.<|) <$> get
 
 pushScope :: LispScope -> LispInterp ()
 pushScope scope = modify $ NE.cons scope
@@ -144,8 +152,8 @@ popScope = do
     _ NE.:| []     -> throwE $ Internal "popScope: empty environment"
     p NE.:| (s:ss) -> put (s NE.:| ss) >> return p
 
-ambientScope :: LispScope
-ambientScope =
+builtinScope :: LispScope
+builtinScope =
   Map.fromList
     [ ("apply", PrimFunc applyOp)
     , ("symbol?", PrimFunc $ typeCheck isSymbol)
@@ -161,9 +169,9 @@ ambientScope =
     , ("&&", PrimFunc $ variadicFoldingOp unpackBool Bool (&&) True)
     , ("||", PrimFunc $ variadicFoldingOp unpackBool Bool (||) False)
     , ("+", PrimFunc $ variadicFoldingOp unpackNumber Number (+) 0)
-    , ("-", PrimFunc $ variadicFoldingOp unpackNumber Number (-) 0)
+    , ("-", PrimFunc $ binaryOp unpackNumber Number (-))
     , ("*", PrimFunc $ variadicFoldingOp unpackNumber Number (*) 1)
-    , ("/", PrimFunc $ variadicFoldingOp unpackNumber Number div 1)
+    , ("/", PrimFunc $ binaryOp unpackNumber Number div)
     , ("modulo", PrimFunc $ binaryOp unpackNumber Number mod)
     , ("quotient", PrimFunc $ binaryOp unpackNumber Number quot)
     , ("remainder", PrimFunc $ binaryOp unpackNumber Number rem)
@@ -173,14 +181,16 @@ ambientScope =
     , ("/=", PrimFunc $ binaryOp unpackNumber Bool (/=))
     , (">=", PrimFunc $ binaryOp unpackNumber Bool (>=))
     , ("<=", PrimFunc $ binaryOp unpackNumber Bool (<=))
+    , ("eval", PrimFunc evalOp)
     , ("open-input-file", PrimFunc $ makePort ReadMode)
     , ("open-output-file", PrimFunc $ makePort WriteMode)
     , ("close-input-port", PrimFunc closePort)
     , ("close-output-port", PrimFunc closePort)
-    -- , ("read", PrimFunc readProc)
-    -- , ("write", PrimFunc writeProc)
-    -- , ("read-contents", PrimFunc readContents)
-    -- , ("read-all", PrimFunc readAll)
+    , ("read", PrimFunc readPort)
+    , ("write", PrimFunc writePort)
+    , ("display", PrimFunc displayPort)
+    , ("newline", PrimFunc newlinePort)
+    , ("load", PrimFunc loadOp)
     ]
 
 type BuiltinOp = [LispVal] -> LispInterp LispVal
@@ -191,27 +201,19 @@ applyOp [f, Pair as] = apply f as
 applyOp [_, arg]     = throwE $ TypeMismatch "pair" arg
 applyOp args         = throwE $ NumArgs 2 args
 
-equalityOp ::
-     (LispVal -> LispVal -> Bool) -> BuiltinOp
+equalityOp :: (LispVal -> LispVal -> Bool) -> BuiltinOp
 equalityOp f []     = return $ Bool True
 equalityOp f (x:xs) = return . Bool $ all (f x) xs
 
 typeCheck :: (LispVal -> Bool) -> BuiltinOp
 typeCheck f args = return . Bool $ all f args
 
-unaryOp ::
-     (LispVal -> LispExcept a)
-  -> (r -> LispVal)
-  -> (a -> r)
-  -> BuiltinOp
+unaryOp :: (LispVal -> LispExcept a) -> (r -> LispVal) -> (a -> r) -> BuiltinOp
 unaryOp unpack con f [a] = lift $ returnInExcept $ con . f <$> unpack a
 unaryOp _ _ _ args       = throwE $ NumArgs 1 args
 
 binaryOp ::
-     (LispVal -> LispExcept a)
-  -> (r -> LispVal)
-  -> (a -> a -> r)
-  -> BuiltinOp
+     (LispVal -> LispExcept a) -> (r -> LispVal) -> (a -> a -> r) -> BuiltinOp
 binaryOp unpack con f [a, b] = do
   a' <- lift $ returnInExcept $ unpack a
   b' <- lift $ returnInExcept $ unpack b
@@ -234,12 +236,54 @@ consOp [car, Pair cdr] = return $ Pair (car : cdr)
 consOp [_, cdr]        = throwE $ TypeMismatch "pair" cdr
 consOp args            = throwE $ NumArgs 2 args
 
+evalOp :: BuiltinOp
+evalOp [expr] = eval expr
+evalOp args   = throwE $ NumArgs 1 args
+
 makePort :: IOMode -> BuiltinOp
-makePort mode [String filename] = liftIO $ Port <$> openFile filename mode
+makePort mode [String filename] = liftIO $ Port <$> IO.openFile filename mode
 makePort _ [arg]                = throwE $ TypeMismatch "filename (string)" arg
 makePort _ args                 = throwE $ NumArgs 1 args
 
 closePort :: BuiltinOp
-closePort [Port handle] = liftIO $ hClose handle >> return (Pair [])
+closePort [Port handle] = liftIO $ IO.hClose handle >> return (Pair [])
 closePort [arg]         = throwE $ TypeMismatch "port" arg
 closePort args          = throwE $ NumArgs 1 args
+
+readPort :: BuiltinOp
+readPort []            = readPort [Port IO.stdin]
+readPort [Port handle] = liftIO (IO.hGetLine handle) >>= lift . parseLisp
+readPort [arg]         = throwE $ TypeMismatch "port" arg
+readPort args          = throwE $ NumArgs 1 args
+
+writePort :: BuiltinOp
+writePort [] = throwE $ NumArgs 1 []
+writePort [obj] = writePort [obj, Port IO.stdout]
+writePort [obj, Port handle] =
+  liftIO $ IO.hPutStr handle (prettyShow obj) >> IO.hFlush handle >> return obj
+writePort [obj, arg] = throwE $ TypeMismatch "port" arg
+writePort args = throwE $ NumArgs 1 args
+
+displayPort :: BuiltinOp
+displayPort [] = throwE $ NumArgs 1 []
+displayPort [String s] = displayPort [String s, Port IO.stdout]
+displayPort [String s, Port handle] =
+  liftIO $ IO.hPutStr handle s >> IO.hFlush handle >> return (String s)
+displayPort [String s, port] = throwE $ TypeMismatch "port" port
+displayPort [str, port] = throwE $ TypeMismatch "string" str
+displayPort args = throwE $ NumArgs 1 args
+
+newlinePort :: BuiltinOp
+newlinePort []            = newlinePort [Port IO.stdout]
+newlinePort [Port handle] = liftIO (IO.hPutStrLn handle "") >> return (Pair [])
+newlinePort [arg]         = throwE $ TypeMismatch "port" arg
+newlinePort args          = throwE $ NumArgs 1 args
+
+loadOp :: BuiltinOp
+loadOp [String filename] = do
+  file <- liftIO $ IO.openFile filename ReadMode
+  source <- liftIO $ IO.hGetContents file
+  parsed <- lift $ parseLispMany source
+  Pair <$> mapM eval parsed
+loadOp [arg] = throwE $ TypeMismatch "filename (string)" arg
+loadOp args = throwE $ NumArgs 1 args

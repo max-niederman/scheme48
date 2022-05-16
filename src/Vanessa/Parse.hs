@@ -20,7 +20,7 @@ parseLispMany =
   returnInExcept .
   except .
   Bifunctor.first (ParseError . show) .
-  parse (sepEndBy parseExpr newline) "lisp"
+  parse (sepEndBy parseExpr $ many1 newline) "lisp"
 
 parseExpr :: Parser LispVal
 parseExpr =

@@ -21,7 +21,7 @@ instance Pretty LispVal where
     let combinator = parens $ hsep [text "lambda", pPrint param, pPrint body]
         closureBindings =
           parens $
-          hsep $ map (\(id, val) -> text id <+> pPrint val) $ Map.toList closure
+          hsep $ map (\(id, val) -> parens $ text id <+> pPrint val) $ Map.toList closure
      in if Map.null closure
           then combinator
           else parens $ hsep [text "let", closureBindings, combinator]
@@ -39,7 +39,7 @@ instance Show LispError where
   show (ParseError message) = "Parse error: " ++ message
   show (NumArgs expected arguments) =
     "Expected " ++
-    show expected ++ " arguments, but got " ++ show (length arguments)
+    show expected ++ " arguments, but got " ++ prettyShow arguments
   show (TypeMismatch expected actual) =
     "Expected " ++ expected ++ ", but got " ++ prettyShow actual
   show (UnboundVar name) = "Variable '" ++ name ++ "' is unbound"

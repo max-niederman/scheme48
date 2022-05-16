@@ -55,6 +55,7 @@ returnInExcept = E.mapExceptT (return . runIdentity)
 
 -- reversed list of scopes, each containing a map of identifiers to values
 type LispState = NE.NonEmpty LispScope
+
 type LispScope = Map.Map String LispVal
 
 -- interpreter monad handling I/O, error handling, and state
