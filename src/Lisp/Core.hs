@@ -1,4 +1,4 @@
-module Vanessa.Core where
+module Lisp.Core where
 
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Except (Except, ExceptT)

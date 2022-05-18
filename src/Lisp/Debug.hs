@@ -1,14 +1,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 
-module Vanessa.Debug
+module Lisp.Debug
   (
   ) where
 
 import qualified Data.Map                       as Map
 import           Text.PrettyPrint
 import           Text.PrettyPrint.HughesPJClass hiding ((<>))
-import           Vanessa.Core
+import           Lisp.Core
 
 instance Pretty LispVal where
   pPrint (Symbol name) = text name

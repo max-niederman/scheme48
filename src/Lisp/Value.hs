@@ -1,7 +1,7 @@
-module Vanessa.Value where
+module Lisp.Value where
 
 import           Control.Monad.Trans.Except (throwE)
-import           Vanessa.Core               hiding (throwE)
+import           Lisp.Core               hiding (throwE)
 
 isSymbol :: LispVal -> Bool
 isSymbol (Symbol _) = True

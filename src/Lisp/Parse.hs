@@ -1,4 +1,4 @@
-module Vanessa.Parse
+module Lisp.Parse
   ( parseLisp
   , parseLispMany
   , parseExpr
@@ -8,7 +8,7 @@ import           Control.Monad.Trans.Except
 import qualified Data.Bifunctor                as Bifunctor
 import           Numeric                       (readHex, readOct)
 import           Text.ParserCombinators.Parsec
-import           Vanessa.Core
+import           Lisp.Core
 
 parseLisp :: Monad m => String -> LispExceptT m LispVal
 parseLisp =

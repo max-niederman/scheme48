@@ -12,7 +12,7 @@
           overlays = [
             haskell-nix.overlay
             (self: super: {
-              vanessa =
+              scheme48 =
                 self.haskell-nix.project'
                   {
                     src = ./.;
@@ -44,18 +44,18 @@
           };
           inherit (pkgs) lib;
 
-          flake = pkgs.vanessa.flake { };
+          flake = pkgs.scheme48.flake { };
         in
         flake // {
-          defaultPackage = flake.packages."vanessa:exe:vanessa";
+          defaultPackage = flake.packages."scheme48:exe:scheme48";
 
           apps = rec {
-            vanessa = {
+            scheme48 = {
               type = "app";
-              program = "${flake.packages."vanessa:exe:vanessa"}/bin/vanessa";
+              program = "${flake.packages."scheme48:exe:scheme48"}/bin/scheme48";
             };
 
-            default = vanessa;
+            default = scheme48;
           };
         }
     );

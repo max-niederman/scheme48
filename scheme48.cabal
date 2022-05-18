@@ -1,5 +1,5 @@
 cabal-version:      2.4
-name:               vanessa
+name:               scheme48
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
@@ -23,11 +23,11 @@ extra-source-files: CHANGELOG.md
 
 library
   exposed-modules:
-    Vanessa.Core
-    Vanessa.Interpret
-    Vanessa.Parse
-    Vanessa.Value
-    Vanessa.Debug
+    Lisp.Core
+    Lisp.Interpret
+    Lisp.Parse
+    Lisp.Value
+    Lisp.Debug
 
   build-depends:
     , base          ^>=4.14.3.0
@@ -39,13 +39,13 @@ library
   hs-source-dirs:   src
   default-language: Haskell2010
 
-executable vanessa
+executable scheme48
   main-is:          Main.hs
   build-depends:
     , base          ^>=4.14.3.0
     , pretty        ^>=1.1.3.6
     , transformers  ^>=0.5.6.2
-    , vanessa
+    , scheme48
 
   hs-source-dirs:   app
   default-language: Haskell2010

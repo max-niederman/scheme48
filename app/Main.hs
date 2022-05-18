@@ -12,10 +12,10 @@ import qualified Data.List.NonEmpty             as NE
 import           System.Environment             (getArgs)
 import           System.IO
 import           Text.PrettyPrint.HughesPJClass (prettyShow)
-import           Vanessa.Core
-import           Vanessa.Debug
-import           Vanessa.Interpret
-import           Vanessa.Parse
+import           Lisp.Core
+import           Lisp.Debug
+import           Lisp.Interpret
+import           Lisp.Parse
 
 rep :: LispInterp ()
 rep = do

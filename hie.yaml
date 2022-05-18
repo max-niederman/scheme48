@@ -1,7 +1,7 @@
 cradle:
   cabal:
     - path: "src"
-      component: "lib:vanessa"
+      component: "lib:scheme48"
 
     - path: "app/Main.hs"
-      component: "vanessa:exe:vanessa"
+      component: "scheme48:exe:scheme48"

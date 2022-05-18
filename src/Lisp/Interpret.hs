@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Vanessa.Interpret
+module Lisp.Interpret
   ( eval
   , LispScope
   , LispState
@@ -21,10 +21,10 @@ import qualified Data.Set                       as Set
 import           GHC.IO.IOMode                  (IOMode (ReadMode, WriteMode))
 import qualified System.IO                      as IO
 import           Text.PrettyPrint.HughesPJClass (prettyShow)
-import           Vanessa.Core
-import           Vanessa.Debug
-import           Vanessa.Parse
-import           Vanessa.Value
+import           Lisp.Core
+import           Lisp.Debug
+import           Lisp.Parse
+import           Lisp.Value
 
 startState :: LispState
 startState = Map.empty NE.:| []
