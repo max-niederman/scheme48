@@ -2,7 +2,7 @@
 .direnv
 
 # editor
-.vscode/
+.vscode
 
 # nix
 result
