@@ -33,3 +33,13 @@ nix run
 # run executable with arguments
 nix run . -- program.scm
 ```
+
+# Architecture
+
+- `app`: contains the executable source code and implements the user interface (e.g. REPL).
+- `src/Lisp`: implements the language itself as a library.
+  - `src/Lisp/Core.hs`: contains core language datatypes shared between other modules.
+  - `src/Lisp/Parse.hs`: implements parsing and is responsible for language syntax.
+  - `src/Lisp/Value.hs`: provides utility functions for working with language values.
+  - `src/Lisp/Interpret.hs`: implements program execution and builtins.
+  - `src/Lisp/Debug.hs`: implements debugging facilities, namely pretty-printing for language values.
