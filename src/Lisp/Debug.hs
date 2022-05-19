@@ -6,9 +6,9 @@ module Lisp.Debug
   ) where
 
 import qualified Data.Map                       as Map
+import           Lisp.Core
 import           Text.PrettyPrint
 import           Text.PrettyPrint.HughesPJClass hiding ((<>))
-import           Lisp.Core
 
 instance Pretty LispVal where
   pPrint (Symbol name) = text name
@@ -21,7 +21,9 @@ instance Pretty LispVal where
     let combinator = parens $ hsep [text "lambda", pPrint param, pPrint body]
         closureBindings =
           parens $
-          hsep $ map (\(id, val) -> parens $ text id <+> pPrint val) $ Map.toList closure
+          hsep $
+          map (\(id, val) -> parens $ text id <+> pPrint val) $
+          Map.toList closure
      in if Map.null closure
           then combinator
           else parens $ hsep [text "let", closureBindings, combinator]

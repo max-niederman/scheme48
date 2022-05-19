@@ -11,7 +11,7 @@
 
 (define (sort lst)
     (if (null? lst)
-        '()
+        lst
         (bubble
             (car lst)
             (sort (cdr lst)))))

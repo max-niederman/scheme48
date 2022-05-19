@@ -8,7 +8,7 @@
 
 (define (map func lst)
     (if (eqv? lst '())
-        '()
+        lst
         (cons
             (func (car lst))
             (map func (cdr lst)))))

@@ -51,7 +51,7 @@ type LispExcept = LispExceptT Identity
 -- useful for converting a `LispExcept` to a `LispExceptT m`
 -- TODO: there is probably a better way to do this, but i can't find it in `transformers`
 returnInExcept :: Monad m => Except e a -> ExceptT e m a
-returnInExcept = E.mapExceptT (return . runIdentity)
+returnInExcept = E.mapExceptT $ return . runIdentity
 
 -- reversed list of scopes, each containing a map of identifiers to values
 type LispState = NE.NonEmpty LispScope

@@ -9,13 +9,13 @@ import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.State
 import qualified Data.Bifunctor                 as Bifunctor
 import qualified Data.List.NonEmpty             as NE
-import           System.Environment             (getArgs)
-import           System.IO
-import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Lisp.Core
 import           Lisp.Debug
 import           Lisp.Interpret
 import           Lisp.Parse
+import           System.Environment             (getArgs)
+import           System.IO
+import           Text.PrettyPrint.HughesPJClass (prettyShow)
 
 rep :: LispInterp ()
 rep = do

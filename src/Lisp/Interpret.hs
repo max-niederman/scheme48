@@ -19,12 +19,12 @@ import qualified Data.Map.Lazy                  as Map
 import qualified Data.Monoid                    as Monoid
 import qualified Data.Set                       as Set
 import           GHC.IO.IOMode                  (IOMode (ReadMode, WriteMode))
-import qualified System.IO                      as IO
-import           Text.PrettyPrint.HughesPJClass (prettyShow)
 import           Lisp.Core
 import           Lisp.Debug
 import           Lisp.Parse
 import           Lisp.Value
+import qualified System.IO                      as IO
+import           Text.PrettyPrint.HughesPJClass (prettyShow)
 
 startState :: LispState
 startState = Map.empty NE.:| []
@@ -39,8 +39,10 @@ eval (Pair [Symbol "if", pred, conseq, alt]) = do
     Bool False -> eval alt
     _          -> throwE $ TypeMismatch "boolean" pred'
 eval (Pair [Symbol "defined?", Symbol id]) = Bool <$> isDefined id
-eval (Pair [Symbol "define", Symbol id, val]) =
-  eval val >>= defineVar id >> return val
+eval (Pair [Symbol "define", Symbol id, val]) = do
+  val <- eval val
+  defineVar id val
+  return val
 eval (Pair [Symbol "define", Pair (Symbol id:params), body]) =
   eval
     (Pair
@@ -58,7 +60,7 @@ eval (Pair [Symbol "lambda", Pair params, body]) = do
   paramNames <- lift $ mapM (returnInExcept . unpackSymbol) params
   return $ Func {param = NaryParam paramNames, body, closure = Map.empty}
 eval (Pair [Symbol "let", Pair bindings, body]) =
-  pairsToBindings bindings >>= pushScope >> eval body >>= returnFromScope
+  pairsToBindings bindings >>= pushScope >> eval body >>= returnClosedValue
 eval (Pair (func:args)) = do
   func <- eval func
   args <- mapM eval args
@@ -75,7 +77,7 @@ apply :: LispVal -> [LispVal] -> LispInterp LispVal
 apply Func {param, body, closure} args = do
   pushScope closure
   paramToScope param args >>= pushScope
-  ret <- eval body >>= returnFromScope
+  ret <- eval body >>= returnClosedValue
   popScope
   return ret
 apply (PrimFunc f) args = f args
@@ -98,17 +100,21 @@ paramToScope (NaryParam ps) vs =
     then return $ Map.fromList $ zip ps vs
     else throwE $ NumArgs (toInteger $ length ps) vs
 
--- pop a scope from the stack, returning a value after modifying it for safe use outside of the popped scope
+-- closes a value of a scope out of which it is being moved
 -- this allows functions to close over variables from a scope before they pass out of it
-returnFromScope :: LispVal -> LispInterp LispVal
-returnFromScope val = do
-  scope <- popScope
+closeValue :: LispVal -> LispScope -> LispInterp LispVal
+closeValue val scope = do
   case val
     -- NOTE: since we're using the lazy `Map`, it's probably fine to add the entire scope to the closure,
     --       but we could also filter it and add only the entries corresponding to free variables
         of
     func@Func {closure} -> return func {closure = Map.union closure scope}
     _                   -> return val
+
+-- like `closeValue`, but uses the uppermost scope
+returnClosedValue :: LispVal -> LispInterp LispVal
+returnClosedValue val = do
+  popScope >>= closeValue val
 
 defineVar :: String -> LispVal -> LispInterp ()
 defineVar id val = do
@@ -191,6 +197,8 @@ builtinScope =
     , ("display", PrimFunc displayPort)
     , ("newline", PrimFunc newlinePort)
     , ("load", PrimFunc loadOp)
+    -- debugging
+    , ("trace", PrimFunc traceOp)
     ]
 
 type BuiltinOp = [LispVal] -> LispInterp LispVal
@@ -287,3 +295,14 @@ loadOp [String filename] = do
   Pair <$> mapM eval parsed
 loadOp [arg] = throwE $ TypeMismatch "filename (string)" arg
 loadOp args = throwE $ NumArgs 1 args
+
+traceOp :: BuiltinOp
+traceOp [val] = do
+  liftIO $ putStrLn "trace: "
+  state <- get
+  liftIO $ putStr "state: "
+  liftIO $ putStrLn $ prettyShow $ NE.toList state
+  liftIO $ putStr "value: "
+  liftIO $ putStrLn $ prettyShow val
+  return val
+traceOp args = throwE $ NumArgs 1 args

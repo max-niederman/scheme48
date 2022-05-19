@@ -6,21 +6,28 @@ module Lisp.Parse
 
 import           Control.Monad.Trans.Except
 import qualified Data.Bifunctor                as Bifunctor
+import           Lisp.Core
 import           Numeric                       (readHex, readOct)
 import           Text.ParserCombinators.Parsec
-import           Lisp.Core
 
 parseLisp :: Monad m => String -> LispExceptT m LispVal
 parseLisp =
   returnInExcept .
-  except . Bifunctor.first (ParseError . show) . parse parseExpr "lisp"
+  except .
+  Bifunctor.first (ParseError . show) . parse parseExpr "lisp" . stripComments
 
 parseLispMany :: Monad m => String -> LispExceptT m [LispVal]
 parseLispMany =
   returnInExcept .
   except .
   Bifunctor.first (ParseError . show) .
-  parse (sepEndBy parseExpr $ many1 newline) "lisp"
+  parse (sepEndBy parseExpr $ many1 newline) "lisp" . stripComments
+
+-- NOTE: there may be a nice way to do this using Parsec idk it
+stripComments :: String -> String
+stripComments (';':cs) = stripComments $ tail $ dropWhile (/= '\n') cs
+stripComments (c:cs)   = c : stripComments cs
+stripComments []       = []
 
 parseExpr :: Parser LispVal
 parseExpr =

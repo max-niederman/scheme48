@@ -34,7 +34,7 @@ nix run
 nix run . -- program.scm
 ```
 
-# Architecture
+## Architecture
 
 - `app`: contains the executable source code and implements the user interface (e.g. REPL).
 - `src/Lisp`: implements the language itself as a library.
@@ -43,3 +43,30 @@ nix run . -- program.scm
   - `src/Lisp/Value.hs`: provides utility functions for working with language values.
   - `src/Lisp/Interpret.hs`: implements program execution and builtins.
   - `src/Lisp/Debug.hs`: implements debugging facilities, namely pretty-printing for language values.
+
+## Examples
+
+There are a few examples in the `examples` directory.
+
+- `examples/hello-world.scm`: a simple program that prints "Hello, World!"
+- `examples/fizz-buzz.scm`: a program that plays [Fizz buzz](https://en.wikipedia.org/wiki/Fizz_buzz)
+- `examples/bubble-sort.scm`: a program which sorts a list of numbers using the [bubble sort algorithm](https://en.wikipedia.org/wiki/Bubble_sort)
+- `examples/fibonacci.scm`: two algorithms for computing elements of the Fibonacci sequence
+
+Most examples have I/O and are meant to be run like so:
+
+```bash
+scheme48 examples/hello-world.scm
+
+# with cabal
+cabal run scheme48 -- examples/hello-world.scm
+
+# with nix
+nix run . -- examples/hello-world.scm
+```
+
+And most can also be imported into the REPL:
+
+```scheme
+(load "examples/hello-world.scm")
+```
